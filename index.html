@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>성별 분리 랜덤 자리 배치기 (다중 반 관리)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700;900&display=swap" rel="stylesheet">
+
+    <!-- Firebase SDK (v10 compat) -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+
+    <style>
+        body { font-family: 'Noto Sans KR', sans-serif; background-color: #f1f5f9; }
+        .chalkboard { background-color: #38512f; color: white; border-bottom: 6px solid #2d4126; }
+        .seat-box {
+            border: 1.5px solid #1e293b;
+            min-height: 85px;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: white;
+            position: relative;
+            padding: 0.5rem 0.25rem;
+            word-break: break-all;
+        }
+        .male-border   { border-left: 6px solid #3b82f6; }
+        .female-border { border-left: 6px solid #ec4899; }
+        .gender-indicator {
+            position: absolute;
+            top: 4px;
+            left: 6px;
+            font-size: 0.6rem;
+            font-weight: 900;
+            color: #cbd5e1;
+            pointer-events: none;
+        }
+        @media print { .no-print { display: none; } }
+        #seatingGrid {
+            display: grid;
+            gap: 1.5rem;
+            align-items: start;
+        }
+        @media (max-width: 850px) {
+            #seatingGrid { grid-template-columns: 1fr !important; gap: 1rem; }
+        }
+
+        /* 저장 버튼 애니메이션 */
+        @keyframes pulse-green { 0%,100% { background-color: #16a34a; } 50% { background-color: #15803d; } }
+        .saving { animation: pulse-green 0.8s infinite; }
+    </style>
+</head>
+<body class="p-4 md:p-6">
+
+<!-- ============================================================
+     🔧 Firebase 설정 가이드 (설정 완료 후 자동으로 숨겨집니다)
+     ============================================================ -->
+<div id="setupGuide" style="display:none" class="max-w-4xl mx-auto mb-6 bg-amber-50 border-2 border-amber-400 rounded-2xl p-5 no-print">
+    <h2 class="text-lg font-black text-amber-800 mb-3 flex items-center gap-2">⚙️ Firebase 초기 설정이 필요합니다</h2>
+    <p class="text-sm text-amber-700 mb-4">아래 단계를 따라 Firebase를 설정하면, 어느 기기에서 열어도 명단이 자동으로 동기화됩니다.</p>
+    <ol class="text-sm text-amber-800 space-y-2 mb-4">
+        <li><strong>1단계</strong> — <a href="https://console.firebase.google.com/" target="_blank" class="underline text-blue-600">Firebase 콘솔</a>에서 구글 계정으로 로그인 → <strong>[프로젝트 추가]</strong> → 이름 입력 (예: classroom-seats) → 완료</li>
+        <li><strong>2단계</strong> — 프로젝트 홈 화면 → <strong>웹 앱 추가(&lt;/&gt;)</strong> → 앱 닉네임 입력 → <strong>[앱 등록]</strong> → <code class="bg-amber-100 px-1 rounded">firebaseConfig</code> 코드 복사</li>
+        <li><strong>3단계</strong> — 왼쪽 메뉴 <strong>Firestore Database</strong> → <strong>[데이터베이스 만들기]</strong> → <strong>테스트 모드</strong>로 시작 → 리전 선택(asia-northeast3) → 완료</li>
+        <li><strong>4단계</strong> — 이 HTML 파일을 텍스트 편집기로 열어, 아래 <code class="bg-amber-100 px-1 rounded">firebaseConfig</code> 부분에 복사한 값을 붙여넣기</li>
+        <li><strong>5단계</strong> — 저장 후 브라우저에서 파일을 다시 열면 설정 완료!</li>
+    </ol>
+    <p class="text-xs text-amber-600">💡 GitHub에 올릴 때는 <strong>비공개(Private) 레포지토리</strong>로 만드는 것을 권장합니다.</p>
+</div>
+
+<!-- 설정 영역 -->
+<div class="max-w-4xl mx-auto bg-white p-5 rounded-2xl shadow-xl no-print mb-8 border-t-8 border-green-700">
+    <div class="flex items-start justify-between mb-3">
+        <h1 class="text-2xl font-black text-gray-800 flex items-center gap-2">
+            <span class="bg-green-100 p-1.5 rounded-lg text-xl">🏫</span> 성별 분리 자리 배치 (다중 반 관리)
+        </h1>
+        <!-- 연결 상태 배지 -->
+        <span id="connectionBadge" class="text-xs px-2 py-1 rounded-full bg-slate-100 text-slate-500 font-bold whitespace-nowrap mt-1">⏳ 연결 확인 중</span>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4 text-xs">
+        <div class="bg-slate-50 p-3 rounded-xl border border-slate-200 text-slate-600 flex flex-col justify-center">
+            <p class="font-bold mb-1">📋 사용 팁</p>
+            <p>반을 선택하고 명단을 수정한 뒤 <strong>[현재 명단 저장]</strong>을 누르면 클라우드에 저장되어 다른 기기에서도 그대로 불러옵니다.</p>
+        </div>
+        <div class="bg-slate-50 p-3 rounded-xl border border-slate-200">
+            <p class="font-bold mb-1 text-slate-700">⚙️ 레이아웃</p>
+            <select id="layoutSelect" onchange="shuffleAndRender()" class="w-full p-1.5 border border-slate-300 rounded-lg bg-white font-bold outline-none text-sm">
+                <option value="2x3" selected>🎧 어학실 (2열 3행, 6인 세로형)</option>
+                <option value="language_individual">🎧 어학실 개인버전 (5열 4행, 무작위)</option>
+                <option value="science">🧪 과학실 (4인 1조, 2열 배치)</option>
+                <option value="2x2">2열 2행 (4인 모둠)</option>
+                <option value="2x1">2열 1행 (짝꿍 형태)</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- 반 선택 및 명단 저장 영역 -->
+    <div class="flex items-center gap-2 mb-2">
+        <select id="classSelect" onchange="changeClass()" class="flex-[3] p-2.5 border-2 border-slate-300 rounded-xl bg-white font-black text-slate-800 outline-none focus:border-green-600 transition-all text-base cursor-pointer">
+            <option value="3-3-영어">3-3-영어</option>
+            <option value="3-4-영어">3-4-영어</option>
+            <option value="4-1-영어">4-1-영어</option>
+            <option value="4-2-영어">4-2-영어</option>
+            <option value="4-3-영어">4-3-영어</option>
+            <option value="5-1-과학">5-1-과학</option>
+            <option value="5-2-과학">5-2-과학</option>
+            <option value="5-3-과학">5-3-과학</option>
+            <option value="6-1-과학">6-1-과학</option>
+            <option value="6-2-과학">6-2-과학</option>
+            <option value="6-3-과학">6-3-과학</option>
+        </select>
+        <button id="saveBtn" onclick="saveCurrentList()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-3 rounded-xl transition-all shadow-sm active:scale-95 text-sm whitespace-nowrap">
+            💾 현재 명단 저장
+        </button>
+    </div>
+
+    <div class="mb-4">
+        <textarea id="studentInput" class="w-full h-28 p-3 border-2 border-slate-200 rounded-xl focus:border-green-600 outline-none text-sm transition-all bg-slate-50"
+        placeholder="1 강민준, 51 김서연 (남학생은 1~50, 여학생은 51번 이상 번호 부여)"></textarea>
+    </div>
+
+    <div class="flex gap-2">
+        <button onclick="shuffleAndRender()" class="flex-[2] bg-green-700 hover:bg-green-800 text-white font-black py-3 px-6 rounded-xl transition-all shadow-md active:scale-95 text-base">
+            🎲 자리 섞기
+        </button>
+        <button onclick="downloadImage()" class="flex-1 bg-slate-800 hover:bg-black text-white font-bold py-3 px-4 rounded-xl transition-all shadow-md active:scale-95 text-sm">
+            📸 이미지 저장
+        </button>
+    </div>
+</div>
+
+<!-- 결과 출력 영역 -->
+<div id="captureArea" class="max-w-[1300px] mx-auto bg-white p-6 md:p-10 border shadow-2xl relative overflow-hidden rounded-3xl">
+    <div class="text-center mb-8">
+        <h2 class="text-3xl font-black mb-4 tracking-tight text-slate-900 pb-4 border-b-2 border-slate-100">SEAT PLAN</h2>
+        <div id="chalkboardTitle" class="chalkboard w-full py-6 text-3xl font-black rounded-2xl shadow-xl mb-8 flex items-center justify-center tracking-widest">
+            3-3-영어 자리 배치도
+        </div>
+    </div>
+    <div id="seatingGrid"></div>
+    <div class="mt-12 pt-6 border-t border-slate-50 text-center text-slate-300 text-[10px] font-bold">
+        * 어학실 개인버전: 5열 4행 완전 무작위 배치 / 과학실: 테이블별 동성 배치 / 일반: 행(줄) 단위 교차 배치 (맨 앞줄 성별 무작위)
+    </div>
+</div>
+
+<script>
+// ============================================================
+// 🔧 Firebase 설정 — 아래 값을 Firebase 콘솔에서 복사한 값으로 교체하세요
+//    교체 전까지는 로컬 저장(localStorage)으로 작동합니다.
+// ============================================================
+const firebaseConfig = {
+    apiKey:            "AIzaSyCkWzg1dDmjtos3gTKqmiOLOrx0-F6seFI",
+    authDomain:        "classroom-seats-8dfbf.firebaseapp.com",
+    projectId:         "classroom-seats-8dfbf",
+    storageBucket:     "classroom-seats-8dfbf.firebasestorage.app",
+    messagingSenderId: "298200896347",
+    appId:             "1:298200896347:web:628950fda73718f2bf407e"
+};
+// ============================================================
+
+// Firebase 설정 여부 판단
+const IS_CONFIGURED = firebaseConfig.apiKey !== "YOUR_API_KEY_HERE";
+let db = null;
+
+if (IS_CONFIGURED) {
+    try {
+        firebase.initializeApp(firebaseConfig);
+        db = firebase.firestore();
+    } catch(e) {
+        console.error("Firebase 초기화 실패:", e);
+    }
+}
+
+const COLLECTION        = "classes";
+const STORAGE_KEY_PREFIX = "classroom_seats_class_";
+const initialList       = "1 권하린, 2 김소리, 3 김하윤, 4 박시우, 5 손하라, 6 송이재, 7 최하임, 8 SAILA LAVANDRA ASTIKA, 9 RUSLANKY ZYINGKAR, 51 김단, 52 김상윤, 53 민지홍, 54 서주환, 55 심예성, 56 이원우, 57 AYDEN DANIAL BIN AIZUDDIN";
+
+// ── 연결 상태 배지 업데이트 ──────────────────────────────────
+function updateBadge(state) {
+    const badge = document.getElementById('connectionBadge');
+    const styles = {
+        cloud:   ['🟢 클라우드 연결됨',   'bg-green-100 text-green-700'],
+        offline: ['🔴 오프라인 (로컬 저장)', 'bg-red-100 text-red-700'],
+        local:   ['💾 로컬 저장 모드',      'bg-yellow-100 text-yellow-700'],
+    };
+    const [text, cls] = styles[state] || styles.local;
+    badge.textContent = text;
+    badge.className = `text-xs px-2 py-1 rounded-full font-bold whitespace-nowrap mt-1 ${cls}`;
+}
+
+// ── 초기화 ───────────────────────────────────────────────────
+window.onload = function () {
+    if (!IS_CONFIGURED) {
+        document.getElementById('setupGuide').style.display = 'block';
+        updateBadge('local');
+    }
+    changeClass();
+};
+
+// ── 반 변경 시 명단 불러오기 ─────────────────────────────────
+async function changeClass() {
+    const classNum     = document.getElementById('classSelect').value;
+    const studentInput = document.getElementById('studentInput');
+
+    document.getElementById('chalkboardTitle').innerText = `${classNum} 자리 배치도`;
+
+    if (IS_CONFIGURED && db) {
+        studentInput.value = "📡 불러오는 중...";
+        try {
+            const docSnap = await db.collection(COLLECTION).doc(classNum).get();
+
+            if (docSnap.exists && docSnap.data().studentList) {
+                const list = docSnap.data().studentList;
+                studentInput.value = list;
+                // 오프라인 캐시 업데이트
+                localStorage.setItem(STORAGE_KEY_PREFIX + classNum, list);
+                updateBadge('cloud');
+            } else {
+                // Firestore에 없으면 로컬 캐시 → 초기 데이터 순으로 폴백
+                const cached = localStorage.getItem(STORAGE_KEY_PREFIX + classNum);
+                studentInput.value = cached || (classNum === "3-3-영어" ? initialList : "");
+                updateBadge('cloud');
+            }
+        } catch (e) {
+            // 오프라인 상태
+            console.warn("Firebase 오프라인:", e.message);
+            updateBadge('offline');
+            const cached = localStorage.getItem(STORAGE_KEY_PREFIX + classNum);
+            studentInput.value = cached || (classNum === "3-3-영어" ? initialList : "");
+        }
+    } else {
+        // Firebase 미설정 — 로컬스토리지만 사용
+        const saved = localStorage.getItem(STORAGE_KEY_PREFIX + classNum);
+        studentInput.value = saved || (classNum === "3-3-영어" ? initialList : "");
+        if (!IS_CONFIGURED) updateBadge('local');
+    }
+
+    shuffleAndRender(false);
+}
+
+// ── 현재 명단 저장 ───────────────────────────────────────────
+async function saveCurrentList() {
+    const classNum    = document.getElementById('classSelect').value;
+    const currentList = document.getElementById('studentInput').value;
+    const btn         = document.getElementById('saveBtn');
+
+    // 항상 로컬 캐시에 저장 (오프라인 대비)
+    localStorage.setItem(STORAGE_KEY_PREFIX + classNum, currentList);
+
+    if (IS_CONFIGURED && db) {
+        btn.textContent = "저장 중...";
+        btn.disabled    = true;
+        btn.classList.add('saving');
+
+        try {
+            await db.collection(COLLECTION).doc(classNum).set({
+                studentList: currentList,
+                updatedAt:   firebase.firestore.FieldValue.serverTimestamp()
+            });
+            updateBadge('cloud');
+            btn.textContent  = "✅ 저장 완료!";
+            btn.classList.remove('saving');
+            btn.disabled     = false;
+            setTimeout(() => { btn.innerHTML = '💾 현재 명단 저장'; }, 2000);
+        } catch (e) {
+            btn.innerHTML    = '💾 현재 명단 저장';
+            btn.classList.remove('saving');
+            btn.disabled     = false;
+            updateBadge('offline');
+            alert(`로컬에는 저장됐지만 클라우드 저장 실패:\n${e.message}`);
+        }
+    } else {
+        // 로컬만 저장
+        alert(`${classNum} 명단이 로컬에 저장되었습니다.\n(Firebase 설정 후 클라우드 동기화 가능)`);
+    }
+}
+
+// ── 자리 섞기 & 렌더링 ───────────────────────────────────────
+function shuffleAndRender(isShuffle = true) {
+    const input    = document.getElementById('studentInput').value;
+    const students = input.split(/[,\n]/)
+                         .map(s => s.trim())
+                         .filter(s => s !== "" && !s.includes("(명단을") && s !== "📡 불러오는 중...");
+
+    let males = [], females = [];
+
+    students.forEach(s => {
+        const numMatch = s.match(/\d+/);
+        if (numMatch) {
+            parseInt(numMatch[0]) >= 51 ? females.push(s) : males.push(s);
+        } else {
+            males.push(s);
+        }
+    });
+
+    const shuffle = arr => {
+        const a = [...arr];
+        for (let i = a.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [a[i], a[j]] = [a[j], a[i]];
+        }
+        return a;
+    };
+
+    renderMixedGrid(isShuffle ? shuffle(males) : males, isShuffle ? shuffle(females) : females);
+}
+
+function renderMixedGrid(males, females) {
+    const grid        = document.getElementById('seatingGrid');
+    const layoutValue = document.getElementById('layoutSelect').value;
+    let cols, rows, mainCols;
+
+    // ── 어학실 개인버전 (5열 4행) ──────────────────────────────
+    if (layoutValue === 'language_individual') {
+        const COLS = 5, ROWS = 4;
+        const shuffleArr = arr => {
+            const a = [...arr];
+            for (let i = a.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [a[i], a[j]] = [a[j], a[i]];
+            }
+            return a;
+        };
+        const allStudents  = shuffleArr([...males, ...females]);
+        const colStudents  = Array.from({ length: COLS }, () => []);
+        let idx = 0;
+        for (let c = 1; c < COLS && idx < allStudents.length; c++) {
+            while (colStudents[c].length < ROWS && idx < allStudents.length) colStudents[c].push(allStudents[idx++]);
+        }
+        while (idx < allStudents.length) colStudents[0].push(allStudents[idx++]);
+        for (let c = 1; c < COLS; c++) colStudents[c] = shuffleArr(colStudents[c]);
+        const col0      = shuffleArr(colStudents[0]);
+        const col0Slots = [null, null, null, null];
+        [1, 2, 3, 0].forEach((s, i) => { col0Slots[s] = col0[i]; });
+        colStudents[0] = col0Slots;
+
+        const colColors = [
+            { border: '#3b82f6', bg: '#eff6ff', label: '#3b82f6' },
+            { border: '#10b981', bg: '#f0fdf4', label: '#10b981' },
+            { border: '#f59e0b', bg: '#fffbeb', label: '#f59e0b' },
+            { border: '#ef4444', bg: '#fef2f2', label: '#ef4444' },
+            { border: '#8b5cf6', bg: '#f5f3ff', label: '#8b5cf6' },
+        ];
+
+        grid.innerHTML = '';
+        grid.style.gridTemplateColumns = `repeat(${COLS}, 1fr)`;
+        grid.style.gap = '1.8rem';
+
+        for (let c = 0; c < COLS; c++) {
+            const col = document.createElement('div');
+            col.style.cssText = 'display:flex;flex-direction:column;gap:0.5rem;';
+
+            const hdr = document.createElement('div');
+            hdr.style.cssText = `text-align:center;font-size:0.75rem;font-weight:900;color:${colColors[c].border};background:${colColors[c].bg};border:2px solid ${colColors[c].border};border-radius:6px;padding:3px 0;letter-spacing:0.05em;`;
+            hdr.textContent = `${c + 1}모둠`;
+            col.appendChild(hdr);
+
+            for (let r = 0; r < ROWS; r++) {
+                const seat    = document.createElement('div');
+                seat.className = 'seat-box rounded-md shadow-sm';
+                seat.style.cssText = `border-left:6px solid ${colColors[c].border};background-color:${colColors[c].bg};`;
+                const student = colStudents[c][r];
+                seat.innerHTML = student
+                    ? `<span class="gender-indicator" style="color:${colColors[c].label}">${c+1}-${r+1}</span><span class="text-base md:text-xl font-black text-slate-800 text-center leading-[1.2] px-1">${student}</span>`
+                    : `<span class="text-slate-200 text-[10px] font-bold italic">EMPTY</span>`;
+                col.appendChild(seat);
+            }
+            grid.appendChild(col);
+        }
+        return;
+    }
+
+    // ── 과학실 / 일반 교실 ─────────────────────────────────────
+    if (layoutValue === 'science') {
+        cols = 2; rows = 2; mainCols = 2;
+    } else {
+        [cols, rows] = layoutValue.split('x').map(Number);
+        mainCols = 3;
+    }
+
+    grid.innerHTML = '';
+    grid.style.gridTemplateColumns = `repeat(${mainCols}, 1fr)`;
+
+    if (layoutValue === 'science') {
+        const seatsPerGroup   = cols * rows;
+        const numMaleGroups   = Math.ceil(males.length / seatsPerGroup);
+        const numFemaleGroups = Math.ceil(females.length / seatsPerGroup);
+        let groupGenders = [...Array(numMaleGroups).fill('male'), ...Array(numFemaleGroups).fill('female')];
+        const shuffle = arr => { const a=[...arr]; for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a; };
+        groupGenders = shuffle(groupGenders);
+        let groupIndex = 0;
+
+        while (males.length > 0 || females.length > 0) {
+            const block = document.createElement('div');
+            block.style.display = 'grid';
+            block.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+            block.className = 'border border-slate-300 p-1.5 gap-1.5 bg-slate-50/30 rounded-lg shadow-sm h-fit mb-2 overflow-hidden';
+            let cg = groupGenders[groupIndex] || 'male';
+            if (cg === 'male'   && males.length   === 0) cg = 'female';
+            if (cg === 'female' && females.length === 0) cg = 'male';
+
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    const seat = document.createElement('div');
+                    let name = "", gender = "";
+                    if (cg === 'male'   && males.length   > 0) { name = males.shift();   gender = 'male'; }
+                    else if (cg === 'female' && females.length > 0) { name = females.shift(); gender = 'female'; }
+                    seat.className = `seat-box ${name ? (gender==='female'?'female-border':'male-border') : ''} rounded-md shadow-sm`;
+                    seat.innerHTML = name
+                        ? `<span class="gender-indicator">${gender==='female'?'F':'M'}</span><span class="text-base md:text-xl font-black text-slate-800 text-center leading-[1.2] px-1">${name}</span>`
+                        : `<span class="text-slate-200 text-[10px] font-bold italic">EMPTY</span>`;
+                    block.appendChild(seat);
+                }
+            }
+            grid.appendChild(block);
+            groupIndex++;
+        }
+    } else {
+        while (males.length > 0 || females.length > 0) {
+            const block = document.createElement('div');
+            block.style.display = 'grid';
+            block.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+            block.className = 'border border-slate-300 p-1.5 gap-1.5 bg-slate-50/30 rounded-lg shadow-sm h-fit mb-2 overflow-hidden';
+            const startGender = Math.random() < 0.5 ? 'male' : 'female';
+
+            for (let r = 0; r < rows; r++) {
+                let tg = (r % 2 === 0) ? startGender : (startGender === 'male' ? 'female' : 'male');
+                if (tg === 'male'   && males.length   === 0) tg = 'female';
+                else if (tg === 'female' && females.length === 0) tg = 'male';
+
+                for (let c = 0; c < cols; c++) {
+                    const seat = document.createElement('div');
+                    let name = "", gender = "";
+                    if (tg === 'male'   && males.length   > 0) { name = males.shift();   gender = 'male'; }
+                    else if (tg === 'female' && females.length > 0) { name = females.shift(); gender = 'female'; }
+                    seat.className = `seat-box ${name ? (gender==='female'?'female-border':'male-border') : ''} rounded-md shadow-sm`;
+                    seat.innerHTML = name
+                        ? `<span class="gender-indicator">${gender==='female'?'F':'M'}</span><span class="text-base md:text-xl font-black text-slate-800 text-center leading-[1.2] px-1">${name}</span>`
+                        : `<span class="text-slate-200 text-[10px] font-bold italic">EMPTY</span>`;
+                    block.appendChild(seat);
+                }
+            }
+            grid.appendChild(block);
+        }
+    }
+}
+
+// ── 이미지 저장 ──────────────────────────────────────────────
+function downloadImage() {
+    const captureArea = document.getElementById('captureArea');
+    const classNum    = document.getElementById('classSelect').value;
+    const btn         = event.currentTarget;
+    const orig        = btn.innerHTML;
+    btn.innerText = "저장 중...";
+    btn.disabled  = true;
+
+    html2canvas(captureArea, {
+        scale: 2, backgroundColor: "#ffffff", useCORS: true, windowWidth: 1300
+    }).then(canvas => {
+        const link      = document.createElement('a');
+        link.download   = `자리배치_${classNum}_${new Date().toISOString().slice(0,10)}.png`;
+        link.href       = canvas.toDataURL('image/png');
+        link.click();
+        btn.innerHTML   = orig;
+        btn.disabled    = false;
+    });
+}
+</script>
+</body>
+</html>
