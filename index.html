@@ -1,3 +1,6 @@
+중간 부분이 잘렸네요. 전체를 출력할게요.전체 코드입니다. GitHub에서 바로 붙여넣으면 됩니다:
+
+```html
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -489,23 +492,12 @@ let dragSource = null;
 
 function enableDragAndDrop() {
     document.querySelectorAll('#seatingGrid .seat-box').forEach(seat => {
-        // 빈 자리는 드래그 대상에서 제외
-        if (seat.querySelector('.text-slate-200')) return;
+        const isEmpty = !!seat.querySelector('.text-slate-200');
 
-        seat.draggable = true;
+        // 학생이 있는 자리만 드래그 가능
+        if (!isEmpty) seat.draggable = true;
 
-        seat.addEventListener('dragstart', e => {
-            dragSource = seat;
-            seat.classList.add('dragging');
-            e.dataTransfer.effectAllowed = 'move';
-        });
-
-        seat.addEventListener('dragend', () => {
-            seat.classList.remove('dragging');
-            document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
-            dragSource = null;
-        });
-
+        // 빈 자리 포함 모든 자리가 드롭 대상
         seat.addEventListener('dragover', e => {
             e.preventDefault();
             e.dataTransfer.dropEffect = 'move';
@@ -515,6 +507,20 @@ function enableDragAndDrop() {
         seat.addEventListener('dragleave', () => {
             seat.classList.remove('drag-over');
         });
+
+        if (!isEmpty) {
+            seat.addEventListener('dragstart', e => {
+                dragSource = seat;
+                seat.classList.add('dragging');
+                e.dataTransfer.effectAllowed = 'move';
+            });
+
+            seat.addEventListener('dragend', () => {
+                seat.classList.remove('dragging');
+                document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+                dragSource = null;
+            });
+        }
 
         seat.addEventListener('drop', e => {
             e.preventDefault();
@@ -557,9 +563,16 @@ function enableDragAndDrop() {
                 dragSource.style.backgroundColor = dstBg;
                 seat.style.backgroundColor = srcBg;
             }
+
+            // 드래그 가능 상태 업데이트: 빈 자리가 된 쪽은 draggable 해제, 학생 받은 쪽은 활성화
+            const srcNowEmpty = !!dragSource.querySelector('.text-slate-200');
+            const dstNowEmpty = !!seat.querySelector('.text-slate-200');
+            dragSource.draggable = !srcNowEmpty;
+            seat.draggable = !dstNowEmpty;
         });
     });
 }
 </script>
 </body>
 </html>
+```
