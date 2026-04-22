@@ -49,6 +49,17 @@
             #seatingGrid { grid-template-columns: 1fr !important; gap: 1rem; }
         }
 
+        /* 드래그앤드롭 */
+        .seat-box[draggable="true"] { cursor: grab; }
+        .seat-box.dragging { opacity: 0.4; transform: scale(0.95); }
+        .seat-box.drag-over {
+            outline: 3px dashed #16a34a;
+            outline-offset: -3px;
+            background-color: #f0fdf4 !important;
+            transform: scale(1.03);
+            transition: transform 0.15s, background-color 0.15s;
+        }
+
         /* 저장 버튼 애니메이션 */
         @keyframes pulse-green { 0%,100% { background-color: #16a34a; } 50% { background-color: #15803d; } }
         .saving { animation: pulse-green 0.8s infinite; }
@@ -372,6 +383,7 @@ function renderMixedGrid(males, females) {
             }
             grid.appendChild(col);
         }
+        enableDragAndDrop();
         return;
     }
 
@@ -448,6 +460,7 @@ function renderMixedGrid(males, females) {
             grid.appendChild(block);
         }
     }
+    enableDragAndDrop();
 }
 
 // ── 이미지 저장 ──────────────────────────────────────────────
@@ -468,6 +481,83 @@ function downloadImage() {
         link.click();
         btn.innerHTML   = orig;
         btn.disabled    = false;
+    });
+}
+
+// ── 드래그앤드롭 자리 교환 ───────────────────────────────────
+let dragSource = null;
+
+function enableDragAndDrop() {
+    document.querySelectorAll('#seatingGrid .seat-box').forEach(seat => {
+        // 빈 자리는 드래그 대상에서 제외
+        if (seat.querySelector('.text-slate-200')) return;
+
+        seat.draggable = true;
+
+        seat.addEventListener('dragstart', e => {
+            dragSource = seat;
+            seat.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+        });
+
+        seat.addEventListener('dragend', () => {
+            seat.classList.remove('dragging');
+            document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+            dragSource = null;
+        });
+
+        seat.addEventListener('dragover', e => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            if (seat !== dragSource) seat.classList.add('drag-over');
+        });
+
+        seat.addEventListener('dragleave', () => {
+            seat.classList.remove('drag-over');
+        });
+
+        seat.addEventListener('drop', e => {
+            e.preventDefault();
+            seat.classList.remove('drag-over');
+            if (!dragSource || dragSource === seat) return;
+
+            // innerHTML & 성별 border 교환
+            const tmpHTML = dragSource.innerHTML;
+            const tmpClasses = [...dragSource.classList];
+
+            dragSource.innerHTML = seat.innerHTML;
+            seat.innerHTML = tmpHTML;
+
+            // 성별 border 클래스 교환
+            const srcMale = tmpClasses.includes('male-border');
+            const srcFemale = tmpClasses.includes('female-border');
+            const dstMale = seat.classList.contains('male-border');
+            const dstFemale = seat.classList.contains('female-border');
+
+            dragSource.classList.remove('male-border', 'female-border');
+            seat.classList.remove('male-border', 'female-border');
+
+            if (dstMale) dragSource.classList.add('male-border');
+            if (dstFemale) dragSource.classList.add('female-border');
+            if (srcMale) seat.classList.add('male-border');
+            if (srcFemale) seat.classList.add('female-border');
+
+            // 어학실 개인버전: border-left 인라인 스타일도 교환
+            const srcStyle = dragSource.style.borderLeft;
+            const dstStyle = seat.style.borderLeft;
+            if (srcStyle || dstStyle) {
+                dragSource.style.borderLeft = dstStyle;
+                seat.style.borderLeft = srcStyle;
+            }
+
+            // 어학실 개인버전: background-color 인라인 스타일도 교환
+            const srcBg = dragSource.style.backgroundColor;
+            const dstBg = seat.style.backgroundColor;
+            if (srcBg || dstBg) {
+                dragSource.style.backgroundColor = dstBg;
+                seat.style.backgroundColor = srcBg;
+            }
+        });
     });
 }
 </script>
