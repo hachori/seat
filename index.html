@@ -203,6 +203,48 @@ const EMPTY_SEAT_HTML = `
     </div>
 `;
 
+// ── 데이터 기반 자리 렌더링 함수 ─────────────────────────────
+// HTML 구조를 조작하는 대신, 요소에 저장된 data 속성을 기반으로 화면을 다시 그립니다.
+// 자리 이동이나 삭제, 추가 시에 이 함수를 호출하여 고정된 레이아웃 색상을 유지합니다.
+function renderSeat(seat) {
+    const isLang = seat.dataset.layout === 'language_individual';
+    const name = seat.dataset.studentName;
+    const gender = seat.dataset.studentGender;
+
+    if (!name || name === "") {
+        seat.innerHTML = EMPTY_SEAT_HTML;
+        seat.classList.remove('male-border', 'female-border');
+        seat.style.borderLeft = '';
+        seat.style.backgroundColor = '';
+        seat.draggable = false;
+        return;
+    }
+
+    seat.draggable = true;
+    if (isLang) {
+        // 어학실 모드: 원래 자리(Column)의 고정된 색상을 적용
+        seat.style.borderLeft = `6px solid ${seat.dataset.defaultBorder}`;
+        seat.style.backgroundColor = seat.dataset.defaultBg;
+        seat.classList.remove('male-border', 'female-border');
+        seat.innerHTML = `
+            <span class="gender-indicator" style="color:${seat.dataset.defaultLabel}">${seat.dataset.gridIndex}</span>
+            ${DELETE_BTN_HTML}
+            <span class="text-base md:text-xl font-black text-slate-800 text-center leading-[1.2] px-1">${name}</span>
+        `;
+    } else {
+        // 일반/과학실 모드: 학생의 성별에 따른 테두리 색상을 적용
+        seat.style.borderLeft = '';
+        seat.style.backgroundColor = '';
+        seat.classList.remove('male-border', 'female-border');
+        seat.classList.add(gender === 'female' ? 'female-border' : 'male-border');
+        seat.innerHTML = `
+            <span class="gender-indicator">${gender === 'female' ? 'F' : 'M'}</span>
+            ${DELETE_BTN_HTML}
+            <span class="text-base md:text-xl font-black text-slate-800 text-center leading-[1.2] px-1">${name}</span>
+        `;
+    }
+}
+
 // ── 결석생 삭제 / 학생 추가 기능 이벤트 위임 ─────────────────────────────
 document.addEventListener('click', function(e) {
     // 삭제 기능
@@ -210,11 +252,10 @@ document.addEventListener('click', function(e) {
         e.stopPropagation();
         const seat = e.target.closest('.seat-box');
         if(confirm("이 학생을 결석 처리하여 자리를 비울까요?")) {
-            seat.innerHTML = EMPTY_SEAT_HTML;
-            seat.classList.remove('male-border', 'female-border');
-            seat.style.borderLeft = '';
-            seat.style.backgroundColor = '';
-            seat.draggable = false;
+            // 학생 데이터만 비우고 렌더링 호출
+            seat.dataset.studentName = '';
+            seat.dataset.studentGender = '';
+            renderSeat(seat);
         }
     }
 
@@ -230,28 +271,10 @@ document.addEventListener('click', function(e) {
             if (numMatch && parseInt(numMatch[0]) >= 51) {
                 gender = 'female';
             }
-            const isFemale = gender === 'female';
-
-            // 어학실 개인버전 레이아웃인 경우 저장된 data 속성 기반으로 색상 복원
-            if (seat.dataset.defaultBorder) {
-                seat.style.borderLeft = `6px solid ${seat.dataset.defaultBorder}`;
-                seat.style.backgroundColor = seat.dataset.defaultBg;
-                seat.innerHTML = `
-                    <span class="gender-indicator" style="color:${seat.dataset.defaultLabel}">${seat.dataset.gridIndex}</span>
-                    ${DELETE_BTN_HTML}
-                    <span class="text-base md:text-xl font-black text-slate-800 text-center leading-[1.2] px-1">${studentInfo}</span>
-                `;
-            } else {
-                // 과학실 및 일반 레이아웃
-                seat.classList.add(isFemale ? 'female-border' : 'male-border');
-                seat.innerHTML = `
-                    <span class="gender-indicator">${isFemale ? 'F' : 'M'}</span>
-                    ${DELETE_BTN_HTML}
-                    <span class="text-base md:text-xl font-black text-slate-800 text-center leading-[1.2] px-1">${studentInfo}</span>
-                `;
-            }
-            // 학생이 추가되었으므로 다시 드래그 가능하도록 설정
-            seat.draggable = true;
+            // 학생 데이터 주입 후 렌더링 호출
+            seat.dataset.studentName = studentInfo.trim();
+            seat.dataset.studentGender = gender;
+            renderSeat(seat);
         }
     }
 });
@@ -446,10 +469,11 @@ function renderMixedGrid(males, females) {
             col.appendChild(hdr);
 
             for (let r = 0; r < ROWS; r++) {
-                const seat    = document.createElement('div');
+                const seat = document.createElement('div');
                 seat.className = 'seat-box group rounded-md shadow-sm';
                 
-                // 복원(추가) 기능을 위해 기본 레이아웃 색상 저장
+                // 자리 고유의 디자인 데이터셋 저장 (이동되지 않음)
+                seat.dataset.layout = 'language_individual';
                 seat.dataset.defaultBorder = colColors[c].border;
                 seat.dataset.defaultBg = colColors[c].bg;
                 seat.dataset.defaultLabel = colColors[c].label;
@@ -457,15 +481,16 @@ function renderMixedGrid(males, females) {
 
                 const student = colStudents[c][r];
                 if(student) {
-                    seat.style.cssText = `border-left:6px solid ${colColors[c].border};background-color:${colColors[c].bg};`;
-                    seat.innerHTML = `
-                        <span class="gender-indicator" style="color:${colColors[c].label}">${c+1}-${r+1}</span>
-                        ${DELETE_BTN_HTML}
-                        <span class="text-base md:text-xl font-black text-slate-800 text-center leading-[1.2] px-1">${student}</span>
-                    `;
+                    const numMatch = student.match(/\d+/);
+                    seat.dataset.studentName = student;
+                    seat.dataset.studentGender = (numMatch && parseInt(numMatch[0]) >= 51) ? 'female' : 'male';
                 } else {
-                    seat.innerHTML = EMPTY_SEAT_HTML;
+                    seat.dataset.studentName = '';
+                    seat.dataset.studentGender = '';
                 }
+                
+                // 데이터 기반으로 화면 그리기
+                renderSeat(seat);
                 col.appendChild(seat);
             }
             grid.appendChild(col);
@@ -506,20 +531,17 @@ function renderMixedGrid(males, females) {
             for (let r = 0; r < rows; r++) {
                 for (let c = 0; c < cols; c++) {
                     const seat = document.createElement('div');
+                    seat.className = `seat-box group rounded-md shadow-sm`;
+                    seat.dataset.layout = 'normal';
+
                     let name = "", gender = "";
                     if (cg === 'male'   && males.length   > 0) { name = males.shift();   gender = 'male'; }
                     else if (cg === 'female' && females.length > 0) { name = females.shift(); gender = 'female'; }
                     
-                    seat.className = `seat-box group ${name ? (gender==='female'?'female-border':'male-border') : ''} rounded-md shadow-sm`;
-                    if(name) {
-                        seat.innerHTML = `
-                            <span class="gender-indicator">${gender==='female'?'F':'M'}</span>
-                            ${DELETE_BTN_HTML}
-                            <span class="text-base md:text-xl font-black text-slate-800 text-center leading-[1.2] px-1">${name}</span>
-                        `;
-                    } else {
-                        seat.innerHTML = EMPTY_SEAT_HTML;
-                    }
+                    seat.dataset.studentName = name;
+                    seat.dataset.studentGender = gender;
+
+                    renderSeat(seat);
                     block.appendChild(seat);
                 }
             }
@@ -541,20 +563,17 @@ function renderMixedGrid(males, females) {
 
                 for (let c = 0; c < cols; c++) {
                     const seat = document.createElement('div');
+                    seat.className = `seat-box group rounded-md shadow-sm`;
+                    seat.dataset.layout = 'normal';
+
                     let name = "", gender = "";
                     if (tg === 'male'   && males.length   > 0) { name = males.shift();   gender = 'male'; }
                     else if (tg === 'female' && females.length > 0) { name = females.shift(); gender = 'female'; }
                     
-                    seat.className = `seat-box group ${name ? (gender==='female'?'female-border':'male-border') : ''} rounded-md shadow-sm`;
-                    if(name) {
-                        seat.innerHTML = `
-                            <span class="gender-indicator">${gender==='female'?'F':'M'}</span>
-                            ${DELETE_BTN_HTML}
-                            <span class="text-base md:text-xl font-black text-slate-800 text-center leading-[1.2] px-1">${name}</span>
-                        `;
-                    } else {
-                        seat.innerHTML = EMPTY_SEAT_HTML;
-                    }
+                    seat.dataset.studentName = name;
+                    seat.dataset.studentGender = gender;
+
+                    renderSeat(seat);
                     block.appendChild(seat);
                 }
             }
@@ -585,17 +604,12 @@ function downloadImage() {
     });
 }
 
-// ── 드래그앤드롭 자리 교환 ───────────────────────────────────
+// ── 데이터 기반 드래그앤드롭 자리 교환 ───────────────────────────────────
 let dragSource = null;
 
 function enableDragAndDrop() {
     document.querySelectorAll('#seatingGrid .seat-box').forEach(seat => {
-        const isEmpty = seat.querySelector('.add-btn') !== null;
-
-        // 드래그 가능 여부 초기화
-        seat.draggable = !isEmpty;
-
-        // 모든 좌석에 대해 이벤트 할당 (학생이 채워지면 바로 동작하도록)
+        // 드래그 관련 이벤트 (상태나 색상 변경 없이 스타일 효과만 줌)
         seat.addEventListener('dragover', e => {
             e.preventDefault();
             e.dataTransfer.dropEffect = 'move';
@@ -622,53 +636,30 @@ function enableDragAndDrop() {
             dragSource = null;
         });
 
+        // 드롭 시 HTML 전체를 바꾸지 않고 "학생 데이터"만 교환합니다.
         seat.addEventListener('drop', e => {
             e.preventDefault();
             seat.classList.remove('drag-over');
             if (!dragSource || dragSource === seat) return;
 
-            // innerHTML & 성별 border 교환
-            const tmpHTML = dragSource.innerHTML;
-            const tmpClasses = [...dragSource.classList];
+            // 1. 학생 데이터(이름, 성별) 임시 저장
+            const tmpName = dragSource.dataset.studentName;
+            const tmpGender = dragSource.dataset.studentGender;
 
-            dragSource.innerHTML = seat.innerHTML;
-            seat.innerHTML = tmpHTML;
+            // 2. 소스(드래그 출발지)에 목적지 학생 데이터 적용
+            dragSource.dataset.studentName = seat.dataset.studentName;
+            dragSource.dataset.studentGender = seat.dataset.studentGender;
 
-            // 성별 border 클래스 교환
-            const srcMale = tmpClasses.includes('male-border');
-            const srcFemale = tmpClasses.includes('female-border');
-            const dstMale = seat.classList.contains('male-border');
-            const dstFemale = seat.classList.contains('female-border');
+            // 3. 목적지에 소스 학생 데이터 적용
+            seat.dataset.studentName = tmpName;
+            seat.dataset.studentGender = tmpGender;
 
-            dragSource.classList.remove('male-border', 'female-border');
-            seat.classList.remove('male-border', 'female-border');
+            // 4. 각각의 자리를 데이터 기반으로 새로고침 (각 자리의 고유 색상은 유지됨)
+            renderSeat(dragSource);
+            renderSeat(seat);
 
-            if (dstMale) dragSource.classList.add('male-border');
-            if (dstFemale) dragSource.classList.add('female-border');
-            if (srcMale) seat.classList.add('male-border');
-            if (srcFemale) seat.classList.add('female-border');
-
-            // 어학실 개인버전: border-left 인라인 스타일도 교환
-            const srcStyle = dragSource.style.borderLeft;
-            const dstStyle = seat.style.borderLeft;
-            if (srcStyle || dstStyle) {
-                dragSource.style.borderLeft = dstStyle;
-                seat.style.borderLeft = srcStyle;
-            }
-
-            // 어학실 개인버전: background-color 인라인 스타일도 교환
-            const srcBg = dragSource.style.backgroundColor;
-            const dstBg = seat.style.backgroundColor;
-            if (srcBg || dstBg) {
-                dragSource.style.backgroundColor = dstBg;
-                seat.style.backgroundColor = srcBg;
-            }
-
-            // 드래그 가능 상태 업데이트: 빈 자리가 된 쪽은 draggable 해제, 학생 받은 쪽은 활성화
-            const srcNowEmpty = dragSource.querySelector('.add-btn') !== null;
-            const dstNowEmpty = seat.querySelector('.add-btn') !== null;
-            dragSource.draggable = !srcNowEmpty;
-            seat.draggable = !dstNowEmpty;
+            // 포커스 초기화
+            dragSource = null;
         });
     });
 }
