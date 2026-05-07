@@ -39,7 +39,7 @@
             color: #cbd5e1;
             pointer-events: none;
         }
-        @media print { .no-print { display: none; } }
+        @media print { .no-print { display: none !important; } }
         #seatingGrid {
             display: grid;
             gap: 1.5rem;
@@ -97,6 +97,7 @@
         <div class="bg-slate-50 p-3 rounded-xl border border-slate-200 text-slate-600 flex flex-col justify-center">
             <p class="font-bold mb-1">📋 사용 팁</p>
             <p>반을 선택하고 명단을 수정한 뒤 <strong>[현재 명단 저장]</strong>을 누르면 클라우드에 저장되어 다른 기기에서도 그대로 불러옵니다.</p>
+            <p class="mt-1 text-red-500 font-bold">💡 개별 조작: ✕ (학생 제외) 및 + (빈자리에 학생 추가) 가능</p>
         </div>
         <div class="bg-slate-50 p-3 rounded-xl border border-slate-200">
             <p class="font-bold mb-1 text-slate-700">⚙️ 레이아웃</p>
@@ -190,6 +191,79 @@ if (IS_CONFIGURED) {
 const COLLECTION        = "classes";
 const STORAGE_KEY_PREFIX = "classroom_seats_class_";
 const initialList       = "1 권하린, 2 김소리, 3 김하윤, 4 박시우, 5 손하라, 6 송이재, 7 최하임, 8 SAILA LAVANDRA ASTIKA, 9 RUSLANKY ZYINGKAR, 51 김단, 52 김상윤, 53 민지홍, 54 서주환, 55 심예성, 56 이원우, 57 AYDEN DANIAL BIN AIZUDDIN";
+
+// 공통 HTML 템플릿
+const DELETE_BTN_HTML = `<button class="delete-btn absolute top-0 right-0 p-1.5 text-slate-300 hover:text-red-500 font-black opacity-40 hover:opacity-100 transition-opacity no-print text-xs z-10 cursor-pointer">✕</button>`;
+const EMPTY_SEAT_HTML = `
+    <div class="flex flex-col items-center justify-center">
+        <span class="text-slate-200 text-[10px] font-bold italic">EMPTY</span>
+        <button class="add-btn mt-1.5 px-2.5 py-1 bg-green-50 text-green-700 font-black text-[10px] rounded border border-green-200 hover:bg-green-100 transition-all no-print shadow-sm active:scale-95 z-10 cursor-pointer">
+            + 추가
+        </button>
+    </div>
+`;
+
+// ── 결석생 삭제 / 학생 추가 기능 이벤트 위임 ─────────────────────────────
+document.addEventListener('click', function(e) {
+    // 삭제 기능
+    if (e.target.closest('.delete-btn')) {
+        e.stopPropagation();
+        const seat = e.target.closest('.seat-box');
+        if(confirm("이 학생을 결석 처리하여 자리를 비울까요?")) {
+            seat.innerHTML = EMPTY_SEAT_HTML;
+            seat.classList.remove('male-border', 'female-border');
+            seat.style.borderLeft = '';
+            seat.style.backgroundColor = '';
+            seat.draggable = false;
+        }
+    }
+
+    // 추가 기능
+    if (e.target.closest('.add-btn')) {
+        e.stopPropagation();
+        const seat = e.target.closest('.seat-box');
+        const studentInfo = prompt("추가할 학생의 번호와 이름을 입력하세요.\\n(예: 1 강민준 또는 51 김서연)");
+
+        if (studentInfo && studentInfo.trim() !== "") {
+            const numMatch = studentInfo.match(/\d+/);
+            let gender = 'male';
+            if (numMatch && parseInt(numMatch[0]) >= 51) {
+                gender = 'female';
+            }
+            const isFemale = gender === 'female';
+
+            // 어학실 개인버전 레이아웃인 경우 저장된 data 속성 기반으로 색상 복원
+            if (seat.dataset.defaultBorder) {
+                seat.style.borderLeft = `6px solid ${seat.dataset.defaultBorder}`;
+                seat.style.backgroundColor = seat.dataset.defaultBg;
+                seat.innerHTML = `
+                    <span class="gender-indicator" style="color:${seat.dataset.defaultLabel}">${seat.dataset.gridIndex}</span>
+                    ${DELETE_BTN_HTML}
+                    <span class="text-base md:text-xl font-black text-slate-800 text-center leading-[1.2] px-1">${studentInfo}</span>
+                `;
+            } else {
+                // 과학실 및 일반 레이아웃
+                seat.classList.add(isFemale ? 'female-border' : 'male-border');
+                seat.innerHTML = `
+                    <span class="gender-indicator">${isFemale ? 'F' : 'M'}</span>
+                    ${DELETE_BTN_HTML}
+                    <span class="text-base md:text-xl font-black text-slate-800 text-center leading-[1.2] px-1">${studentInfo}</span>
+                `;
+            }
+            // 학생이 추가되었으므로 다시 드래그 가능하도록 설정
+            seat.draggable = true;
+        }
+    }
+});
+
+// 버튼 클릭 시 드래그 등 불필요한 이벤트가 발생하지 않도록 방지
+document.addEventListener('mousedown', function(e) {
+    if (e.target.closest('.delete-btn') || e.target.closest('.add-btn')) e.stopPropagation();
+});
+document.addEventListener('touchstart', function(e) {
+    if (e.target.closest('.delete-btn') || e.target.closest('.add-btn')) e.stopPropagation();
+}, {passive: false});
+
 
 // ── 연결 상태 배지 업데이트 ──────────────────────────────────
 function updateBadge(state) {
@@ -373,12 +447,25 @@ function renderMixedGrid(males, females) {
 
             for (let r = 0; r < ROWS; r++) {
                 const seat    = document.createElement('div');
-                seat.className = 'seat-box rounded-md shadow-sm';
-                seat.style.cssText = `border-left:6px solid ${colColors[c].border};background-color:${colColors[c].bg};`;
+                seat.className = 'seat-box group rounded-md shadow-sm';
+                
+                // 복원(추가) 기능을 위해 기본 레이아웃 색상 저장
+                seat.dataset.defaultBorder = colColors[c].border;
+                seat.dataset.defaultBg = colColors[c].bg;
+                seat.dataset.defaultLabel = colColors[c].label;
+                seat.dataset.gridIndex = `${c+1}-${r+1}`;
+
                 const student = colStudents[c][r];
-                seat.innerHTML = student
-                    ? `<span class="gender-indicator" style="color:${colColors[c].label}">${c+1}-${r+1}</span><span class="text-base md:text-xl font-black text-slate-800 text-center leading-[1.2] px-1">${student}</span>`
-                    : `<span class="text-slate-200 text-[10px] font-bold italic">EMPTY</span>`;
+                if(student) {
+                    seat.style.cssText = `border-left:6px solid ${colColors[c].border};background-color:${colColors[c].bg};`;
+                    seat.innerHTML = `
+                        <span class="gender-indicator" style="color:${colColors[c].label}">${c+1}-${r+1}</span>
+                        ${DELETE_BTN_HTML}
+                        <span class="text-base md:text-xl font-black text-slate-800 text-center leading-[1.2] px-1">${student}</span>
+                    `;
+                } else {
+                    seat.innerHTML = EMPTY_SEAT_HTML;
+                }
                 col.appendChild(seat);
             }
             grid.appendChild(col);
@@ -422,10 +509,17 @@ function renderMixedGrid(males, females) {
                     let name = "", gender = "";
                     if (cg === 'male'   && males.length   > 0) { name = males.shift();   gender = 'male'; }
                     else if (cg === 'female' && females.length > 0) { name = females.shift(); gender = 'female'; }
-                    seat.className = `seat-box ${name ? (gender==='female'?'female-border':'male-border') : ''} rounded-md shadow-sm`;
-                    seat.innerHTML = name
-                        ? `<span class="gender-indicator">${gender==='female'?'F':'M'}</span><span class="text-base md:text-xl font-black text-slate-800 text-center leading-[1.2] px-1">${name}</span>`
-                        : `<span class="text-slate-200 text-[10px] font-bold italic">EMPTY</span>`;
+                    
+                    seat.className = `seat-box group ${name ? (gender==='female'?'female-border':'male-border') : ''} rounded-md shadow-sm`;
+                    if(name) {
+                        seat.innerHTML = `
+                            <span class="gender-indicator">${gender==='female'?'F':'M'}</span>
+                            ${DELETE_BTN_HTML}
+                            <span class="text-base md:text-xl font-black text-slate-800 text-center leading-[1.2] px-1">${name}</span>
+                        `;
+                    } else {
+                        seat.innerHTML = EMPTY_SEAT_HTML;
+                    }
                     block.appendChild(seat);
                 }
             }
@@ -450,10 +544,17 @@ function renderMixedGrid(males, females) {
                     let name = "", gender = "";
                     if (tg === 'male'   && males.length   > 0) { name = males.shift();   gender = 'male'; }
                     else if (tg === 'female' && females.length > 0) { name = females.shift(); gender = 'female'; }
-                    seat.className = `seat-box ${name ? (gender==='female'?'female-border':'male-border') : ''} rounded-md shadow-sm`;
-                    seat.innerHTML = name
-                        ? `<span class="gender-indicator">${gender==='female'?'F':'M'}</span><span class="text-base md:text-xl font-black text-slate-800 text-center leading-[1.2] px-1">${name}</span>`
-                        : `<span class="text-slate-200 text-[10px] font-bold italic">EMPTY</span>`;
+                    
+                    seat.className = `seat-box group ${name ? (gender==='female'?'female-border':'male-border') : ''} rounded-md shadow-sm`;
+                    if(name) {
+                        seat.innerHTML = `
+                            <span class="gender-indicator">${gender==='female'?'F':'M'}</span>
+                            ${DELETE_BTN_HTML}
+                            <span class="text-base md:text-xl font-black text-slate-800 text-center leading-[1.2] px-1">${name}</span>
+                        `;
+                    } else {
+                        seat.innerHTML = EMPTY_SEAT_HTML;
+                    }
                     block.appendChild(seat);
                 }
             }
@@ -489,12 +590,12 @@ let dragSource = null;
 
 function enableDragAndDrop() {
     document.querySelectorAll('#seatingGrid .seat-box').forEach(seat => {
-        const isEmpty = !!seat.querySelector('.text-slate-200');
+        const isEmpty = seat.querySelector('.add-btn') !== null;
 
-        // 학생이 있는 자리만 드래그 가능
-        if (!isEmpty) seat.draggable = true;
+        // 드래그 가능 여부 초기화
+        seat.draggable = !isEmpty;
 
-        // 빈 자리 포함 모든 자리가 드롭 대상
+        // 모든 좌석에 대해 이벤트 할당 (학생이 채워지면 바로 동작하도록)
         seat.addEventListener('dragover', e => {
             e.preventDefault();
             e.dataTransfer.dropEffect = 'move';
@@ -505,19 +606,21 @@ function enableDragAndDrop() {
             seat.classList.remove('drag-over');
         });
 
-        if (!isEmpty) {
-            seat.addEventListener('dragstart', e => {
-                dragSource = seat;
-                seat.classList.add('dragging');
-                e.dataTransfer.effectAllowed = 'move';
-            });
+        seat.addEventListener('dragstart', e => {
+            if (!seat.draggable) {
+                e.preventDefault();
+                return;
+            }
+            dragSource = seat;
+            seat.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+        });
 
-            seat.addEventListener('dragend', () => {
-                seat.classList.remove('dragging');
-                document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
-                dragSource = null;
-            });
-        }
+        seat.addEventListener('dragend', () => {
+            seat.classList.remove('dragging');
+            document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+            dragSource = null;
+        });
 
         seat.addEventListener('drop', e => {
             e.preventDefault();
@@ -562,8 +665,8 @@ function enableDragAndDrop() {
             }
 
             // 드래그 가능 상태 업데이트: 빈 자리가 된 쪽은 draggable 해제, 학생 받은 쪽은 활성화
-            const srcNowEmpty = !!dragSource.querySelector('.text-slate-200');
-            const dstNowEmpty = !!seat.querySelector('.text-slate-200');
+            const srcNowEmpty = dragSource.querySelector('.add-btn') !== null;
+            const dstNowEmpty = seat.querySelector('.add-btn') !== null;
             dragSource.draggable = !srcNowEmpty;
             seat.draggable = !dstNowEmpty;
         });
@@ -572,4 +675,3 @@ function enableDragAndDrop() {
 </script>
 </body>
 </html>
-```
