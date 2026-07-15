@@ -87,7 +87,7 @@
 <div class="max-w-4xl mx-auto bg-white p-5 rounded-2xl shadow-xl no-print mb-8 border-t-8 border-green-700">
     <div class="flex items-start justify-between mb-3">
         <h1 class="text-2xl font-black text-gray-800 flex items-center gap-2">
-            <span class="bg-green-100 p-1.5 rounded-lg text-xl">🏫</span> 성별 분리 자리 배치 (다중 반 관리)
+            <span class="bg-green-100 p-1.5 rounded-lg text-xl">🏫</span> 성별 분리 자리 배치
         </h1>
         <!-- 연결 상태 배지 -->
         <span id="connectionBadge" class="text-xs px-2 py-1 rounded-full bg-slate-100 text-slate-500 font-bold whitespace-nowrap mt-1">⏳ 연결 확인 중</span>
@@ -97,11 +97,13 @@
         <div class="bg-slate-50 p-3 rounded-xl border border-slate-200 text-slate-600 flex flex-col justify-center">
             <p class="font-bold mb-1">📋 사용 팁</p>
             <p>반을 선택하고 명단을 수정한 뒤 <strong>[현재 명단 저장]</strong>을 누르면 클라우드에 저장되어 다른 기기에서도 그대로 불러옵니다.</p>
-            <p class="mt-1 text-red-500 font-bold">💡 개별 조작: ✕ (학생 제외) 및 + (빈자리에 학생 추가) 가능</p>
+            <p class="mt-1 text-red-500 font-bold">💡 자유배치 모드: 빈칸으로 학생을 드래그하면 자유롭게 자리를 이동할 수 있습니다.</p>
         </div>
         <div class="bg-slate-50 p-3 rounded-xl border border-slate-200">
             <p class="font-bold mb-1 text-slate-700">⚙️ 레이아웃</p>
             <select id="layoutSelect" onchange="shuffleAndRender()" class="w-full p-1.5 border border-slate-300 rounded-lg bg-white font-bold outline-none text-sm">
+                <!-- 새롭게 추가된 자유배치 옵션 -->
+                <option value="free">🔀 자유배치 (8x7 넓은 공간, 맘대로 이동)</option>
                 <option value="2x3" selected>🎧 어학실 (2열 3행, 6인 세로형)</option>
                 <option value="language_individual">🎧 어학실 개인버전 (5열 4행, 무작위)</option>
                 <option value="science">🧪 과학실 (4인 1조, 2열 배치)</option>
@@ -138,7 +140,7 @@
 
     <div class="flex gap-2">
         <button onclick="shuffleAndRender()" class="flex-[2] bg-green-700 hover:bg-green-800 text-white font-black py-3 px-6 rounded-xl transition-all shadow-md active:scale-95 text-base">
-            🎲 자리 섞기
+            🎲 자리 섞기 (좌측 상단으로 리셋)
         </button>
         <button onclick="downloadImage()" class="flex-1 bg-slate-800 hover:bg-black text-white font-bold py-3 px-4 rounded-xl transition-all shadow-md active:scale-95 text-sm">
             📸 이미지 저장
@@ -156,14 +158,13 @@
     </div>
     <div id="seatingGrid"></div>
     <div class="mt-12 pt-6 border-t border-slate-50 text-center text-slate-300 text-[10px] font-bold">
-        * 어학실 개인버전: 5열 4행 완전 무작위 배치 / 과학실: 테이블별 동성 배치 / 일반: 행(줄) 단위 교차 배치 (맨 앞줄 성별 무작위)
+        * 어학실 개인버전: 5열 4행 완전 무작위 배치 / 과학실: 테이블별 동성 배치 / 일반: 행(줄) 단위 교차 배치 (맨 앞줄 성별 무작위) / 자유배치: 완전 수동 배치
     </div>
 </div>
 
 <script>
 // ============================================================
 // 🔧 Firebase 설정 — 아래 값을 Firebase 콘솔에서 복사한 값으로 교체하세요
-//    교체 전까지는 로컬 저장(localStorage)으로 작동합니다.
 // ============================================================
 const firebaseConfig = {
     apiKey:            "AIzaSyCkWzg1dDmjtos3gTKqmiOLOrx0-F6seFI",
@@ -175,7 +176,6 @@ const firebaseConfig = {
 };
 // ============================================================
 
-// Firebase 설정 여부 판단
 const IS_CONFIGURED = firebaseConfig.apiKey !== "YOUR_API_KEY_HERE";
 let db = null;
 
@@ -192,7 +192,6 @@ const COLLECTION        = "classes";
 const STORAGE_KEY_PREFIX = "classroom_seats_class_";
 const initialList       = "1 권하린, 2 김소리, 3 김하윤, 4 박시우, 5 손하라, 6 송이재, 7 최하임, 8 SAILA LAVANDRA ASTIKA, 9 RUSLANKY ZYINGKAR, 51 김단, 52 김상윤, 53 민지홍, 54 서주환, 55 심예성, 56 이원우, 57 AYDEN DANIAL BIN AIZUDDIN";
 
-// 공통 HTML 템플릿
 const DELETE_BTN_HTML = `<button class="delete-btn absolute top-0 right-0 p-1.5 text-slate-300 hover:text-red-500 font-black opacity-40 hover:opacity-100 transition-opacity no-print text-xs z-10 cursor-pointer">✕</button>`;
 const EMPTY_SEAT_HTML = `
     <div class="flex flex-col items-center justify-center">
@@ -204,8 +203,6 @@ const EMPTY_SEAT_HTML = `
 `;
 
 // ── 데이터 기반 자리 렌더링 함수 ─────────────────────────────
-// HTML 구조를 조작하는 대신, 요소에 저장된 data 속성을 기반으로 화면을 다시 그립니다.
-// 자리 이동이나 삭제, 추가 시에 이 함수를 호출하여 고정된 레이아웃 색상을 유지합니다.
 function renderSeat(seat) {
     const isLang = seat.dataset.layout === 'language_individual';
     const name = seat.dataset.studentName;
@@ -215,14 +212,22 @@ function renderSeat(seat) {
         seat.innerHTML = EMPTY_SEAT_HTML;
         seat.classList.remove('male-border', 'female-border');
         seat.style.borderLeft = '';
-        seat.style.backgroundColor = '';
+        // 자유배치 모드에서 빈칸 시인성 향상을 위한 약간의 배경색
+        if(seat.dataset.layout === 'free') {
+            seat.style.backgroundColor = '#f8fafc'; 
+            seat.style.borderStyle = 'dashed';
+        } else {
+            seat.style.backgroundColor = '';
+            seat.style.borderStyle = 'solid';
+        }
         seat.draggable = false;
         return;
     }
 
     seat.draggable = true;
+    seat.style.borderStyle = 'solid';
+    
     if (isLang) {
-        // 어학실 모드: 원래 자리(Column)의 고정된 색상을 적용
         seat.style.borderLeft = `6px solid ${seat.dataset.defaultBorder}`;
         seat.style.backgroundColor = seat.dataset.defaultBg;
         seat.classList.remove('male-border', 'female-border');
@@ -232,7 +237,6 @@ function renderSeat(seat) {
             <span class="text-base md:text-xl font-black text-slate-800 text-center leading-[1.2] px-1">${name}</span>
         `;
     } else {
-        // 일반/과학실 모드: 학생의 성별에 따른 테두리 색상을 적용
         seat.style.borderLeft = '';
         seat.style.backgroundColor = '';
         seat.classList.remove('male-border', 'female-border');
@@ -247,23 +251,20 @@ function renderSeat(seat) {
 
 // ── 결석생 삭제 / 학생 추가 기능 이벤트 위임 ─────────────────────────────
 document.addEventListener('click', function(e) {
-    // 삭제 기능
     if (e.target.closest('.delete-btn')) {
         e.stopPropagation();
         const seat = e.target.closest('.seat-box');
         if(confirm("이 학생을 결석 처리하여 자리를 비울까요?")) {
-            // 학생 데이터만 비우고 렌더링 호출
             seat.dataset.studentName = '';
             seat.dataset.studentGender = '';
             renderSeat(seat);
         }
     }
 
-    // 추가 기능
     if (e.target.closest('.add-btn')) {
         e.stopPropagation();
         const seat = e.target.closest('.seat-box');
-        const studentInfo = prompt("추가할 학생의 번호와 이름을 입력하세요.\\n(예: 1 강민준 또는 51 김서연)");
+        const studentInfo = prompt("추가할 학생의 번호와 이름을 입력하세요.\n(예: 1 강민준 또는 51 김서연)");
 
         if (studentInfo && studentInfo.trim() !== "") {
             const numMatch = studentInfo.match(/\d+/);
@@ -271,7 +272,6 @@ document.addEventListener('click', function(e) {
             if (numMatch && parseInt(numMatch[0]) >= 51) {
                 gender = 'female';
             }
-            // 학생 데이터 주입 후 렌더링 호출
             seat.dataset.studentName = studentInfo.trim();
             seat.dataset.studentGender = gender;
             renderSeat(seat);
@@ -279,7 +279,6 @@ document.addEventListener('click', function(e) {
     }
 });
 
-// 버튼 클릭 시 드래그 등 불필요한 이벤트가 발생하지 않도록 방지
 document.addEventListener('mousedown', function(e) {
     if (e.target.closest('.delete-btn') || e.target.closest('.add-btn')) e.stopPropagation();
 });
@@ -287,8 +286,6 @@ document.addEventListener('touchstart', function(e) {
     if (e.target.closest('.delete-btn') || e.target.closest('.add-btn')) e.stopPropagation();
 }, {passive: false});
 
-
-// ── 연결 상태 배지 업데이트 ──────────────────────────────────
 function updateBadge(state) {
     const badge = document.getElementById('connectionBadge');
     const styles = {
@@ -301,7 +298,6 @@ function updateBadge(state) {
     badge.className = `text-xs px-2 py-1 rounded-full font-bold whitespace-nowrap mt-1 ${cls}`;
 }
 
-// ── 초기화 ───────────────────────────────────────────────────
 window.onload = function () {
     if (!IS_CONFIGURED) {
         document.getElementById('setupGuide').style.display = 'block';
@@ -310,7 +306,6 @@ window.onload = function () {
     changeClass();
 };
 
-// ── 반 변경 시 명단 불러오기 ─────────────────────────────────
 async function changeClass() {
     const classNum     = document.getElementById('classSelect').value;
     const studentInput = document.getElementById('studentInput');
@@ -325,24 +320,20 @@ async function changeClass() {
             if (docSnap.exists && docSnap.data().studentList) {
                 const list = docSnap.data().studentList;
                 studentInput.value = list;
-                // 오프라인 캐시 업데이트
                 localStorage.setItem(STORAGE_KEY_PREFIX + classNum, list);
                 updateBadge('cloud');
             } else {
-                // Firestore에 없으면 로컬 캐시 → 초기 데이터 순으로 폴백
                 const cached = localStorage.getItem(STORAGE_KEY_PREFIX + classNum);
                 studentInput.value = cached || (classNum === "3-3-영어" ? initialList : "");
                 updateBadge('cloud');
             }
         } catch (e) {
-            // 오프라인 상태
             console.warn("Firebase 오프라인:", e.message);
             updateBadge('offline');
             const cached = localStorage.getItem(STORAGE_KEY_PREFIX + classNum);
             studentInput.value = cached || (classNum === "3-3-영어" ? initialList : "");
         }
     } else {
-        // Firebase 미설정 — 로컬스토리지만 사용
         const saved = localStorage.getItem(STORAGE_KEY_PREFIX + classNum);
         studentInput.value = saved || (classNum === "3-3-영어" ? initialList : "");
         if (!IS_CONFIGURED) updateBadge('local');
@@ -351,13 +342,11 @@ async function changeClass() {
     shuffleAndRender(false);
 }
 
-// ── 현재 명단 저장 ───────────────────────────────────────────
 async function saveCurrentList() {
     const classNum    = document.getElementById('classSelect').value;
     const currentList = document.getElementById('studentInput').value;
     const btn         = document.getElementById('saveBtn');
 
-    // 항상 로컬 캐시에 저장 (오프라인 대비)
     localStorage.setItem(STORAGE_KEY_PREFIX + classNum, currentList);
 
     if (IS_CONFIGURED && db) {
@@ -383,12 +372,10 @@ async function saveCurrentList() {
             alert(`로컬에는 저장됐지만 클라우드 저장 실패:\n${e.message}`);
         }
     } else {
-        // 로컬만 저장
         alert(`${classNum} 명단이 로컬에 저장되었습니다.\n(Firebase 설정 후 클라우드 동기화 가능)`);
     }
 }
 
-// ── 자리 섞기 & 렌더링 ───────────────────────────────────────
 function shuffleAndRender(isShuffle = true) {
     const input    = document.getElementById('studentInput').value;
     const students = input.split(/[,\n]/)
@@ -423,7 +410,43 @@ function renderMixedGrid(males, females) {
     const layoutValue = document.getElementById('layoutSelect').value;
     let cols, rows, mainCols;
 
-    // ── 어학실 개인버전 (5열 4행) ──────────────────────────────
+    // ── 자유배치 (새로 추가된 로직) ──────────────────────────────
+    if (layoutValue === 'free') {
+        const COLS = 8;
+        const ROWS = 7; // 총 56칸의 넉넉한 캔버스 제공
+        const totalSeats = COLS * ROWS;
+        const allStudents = [...males, ...females]; // 이미 shuffleAndRender에서 섞여서 들어옴
+
+        grid.innerHTML = '';
+        grid.style.gridTemplateColumns = `repeat(${COLS}, 1fr)`;
+        grid.style.gap = '0.5rem'; // 자유배치는 촘촘하게
+
+        for (let i = 0; i < totalSeats; i++) {
+            const seat = document.createElement('div');
+            // 기본 스타일 설정
+            seat.className = `seat-box group rounded-md shadow-sm transition-colors`;
+            seat.dataset.layout = 'free';
+            seat.style.minHeight = '65px'; // 일반 레이아웃보다 칸 높이를 줄여서 한눈에 들어오게 함
+
+            // 처음에는 좌측 상단부터 학생을 채워넣고 나머지는 빈칸으로 둠
+            if (i < allStudents.length) {
+                const student = allStudents[i];
+                const numMatch = student.match(/\d+/);
+                seat.dataset.studentName = student;
+                seat.dataset.studentGender = (numMatch && parseInt(numMatch[0]) >= 51) ? 'female' : 'male';
+            } else {
+                seat.dataset.studentName = '';
+                seat.dataset.studentGender = '';
+            }
+
+            renderSeat(seat);
+            grid.appendChild(seat);
+        }
+        enableDragAndDrop();
+        return;
+    }
+
+    // ── 어학실 개인버전 ──────────────────────────────
     if (layoutValue === 'language_individual') {
         const COLS = 5, ROWS = 4;
         const shuffleArr = arr => {
@@ -472,7 +495,6 @@ function renderMixedGrid(males, females) {
                 const seat = document.createElement('div');
                 seat.className = 'seat-box group rounded-md shadow-sm';
                 
-                // 자리 고유의 디자인 데이터셋 저장 (이동되지 않음)
                 seat.dataset.layout = 'language_individual';
                 seat.dataset.defaultBorder = colColors[c].border;
                 seat.dataset.defaultBg = colColors[c].bg;
@@ -489,7 +511,6 @@ function renderMixedGrid(males, females) {
                     seat.dataset.studentGender = '';
                 }
                 
-                // 데이터 기반으로 화면 그리기
                 renderSeat(seat);
                 col.appendChild(seat);
             }
@@ -509,6 +530,7 @@ function renderMixedGrid(males, females) {
 
     grid.innerHTML = '';
     grid.style.gridTemplateColumns = `repeat(${mainCols}, 1fr)`;
+    grid.style.gap = '1.5rem';
 
     if (layoutValue === 'science') {
         const seatsPerGroup   = cols * rows;
@@ -583,7 +605,6 @@ function renderMixedGrid(males, females) {
     enableDragAndDrop();
 }
 
-// ── 이미지 저장 ──────────────────────────────────────────────
 function downloadImage() {
     const captureArea = document.getElementById('captureArea');
     const classNum    = document.getElementById('classSelect').value;
@@ -604,12 +625,10 @@ function downloadImage() {
     });
 }
 
-// ── 데이터 기반 드래그앤드롭 자리 교환 ───────────────────────────────────
 let dragSource = null;
 
 function enableDragAndDrop() {
     document.querySelectorAll('#seatingGrid .seat-box').forEach(seat => {
-        // 드래그 관련 이벤트 (상태나 색상 변경 없이 스타일 효과만 줌)
         seat.addEventListener('dragover', e => {
             e.preventDefault();
             e.dataTransfer.dropEffect = 'move';
@@ -636,29 +655,24 @@ function enableDragAndDrop() {
             dragSource = null;
         });
 
-        // 드롭 시 HTML 전체를 바꾸지 않고 "학생 데이터"만 교환합니다.
         seat.addEventListener('drop', e => {
             e.preventDefault();
             seat.classList.remove('drag-over');
             if (!dragSource || dragSource === seat) return;
 
-            // 1. 학생 데이터(이름, 성별) 임시 저장
+            // 학생 데이터 교환 (학생 <-> 학생) 혹은 (학생 <-> 빈자리) 이동
             const tmpName = dragSource.dataset.studentName;
             const tmpGender = dragSource.dataset.studentGender;
 
-            // 2. 소스(드래그 출발지)에 목적지 학생 데이터 적용
             dragSource.dataset.studentName = seat.dataset.studentName;
             dragSource.dataset.studentGender = seat.dataset.studentGender;
 
-            // 3. 목적지에 소스 학생 데이터 적용
             seat.dataset.studentName = tmpName;
             seat.dataset.studentGender = tmpGender;
 
-            // 4. 각각의 자리를 데이터 기반으로 새로고침 (각 자리의 고유 색상은 유지됨)
             renderSeat(dragSource);
             renderSeat(seat);
 
-            // 포커스 초기화
             dragSource = null;
         });
     });
