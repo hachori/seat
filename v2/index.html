@@ -88,76 +88,112 @@ label.cap{ font-size:.78rem; color:#a3937f; display:block; margin-bottom:.25rem;
   text-shadow:0 2px 6px rgba(0,0,0,.3);
 }
 
-/* ── 자리 카드 ─────────────────────────────── */
+/* ── 자리 = 책상 + 의자 ─────────────────────── */
 #seatingGrid{ display:grid; gap:1.25rem; align-items:start; }
+
 .seat-box{
-  position:relative; background:var(--card);
-  border:3px solid #e6dbc8; border-radius:18px;
-  min-height:var(--seat-min-h);
-  display:flex; flex-direction:column; align-items:center; justify-content:center;
-  padding:.85rem .4rem .55rem;
-  box-shadow:0 4px 0 -1px #eadfcd;
-  transition:transform .12s, box-shadow .12s, border-color .12s;
-  overflow:hidden; word-break:keep-all;
+  --deskEdge:#e6dbc8; --deskBg:var(--card); --chairColor:#dccdb4; --chairSize:13px;
+  position:relative; min-height:var(--seat-min-h);
+  display:flex; align-items:stretch; justify-content:center; gap:3px;
+  transition:transform .12s;
   user-select:none; -webkit-user-select:none; -webkit-touch-callout:none;
 }
-.seat-box::before{
-  content:''; position:absolute; top:0; left:0; right:0; height:7px;
-  background:var(--bar, #e6dbc8); border-radius:14px 14px 0 0;
+/* 학생이 바라보는 방향 — 의자는 그 반대편에 놓인다 */
+.seat-box.face-up   { flex-direction:column;         }
+.seat-box.face-down { flex-direction:column-reverse; }
+.seat-box.face-left { flex-direction:row;            }
+.seat-box.face-right{ flex-direction:row-reverse;    }
+
+.desk{
+  position:relative; flex:1 1 auto; min-width:0; min-height:0;
+  display:flex; align-items:center; justify-content:center;
+  background:var(--deskBg); border:3px solid var(--deskEdge); border-radius:14px;
+  box-shadow:0 5px 0 -1px #e8dcc8;
+  padding:.7rem .35rem .5rem;
+  overflow:hidden; word-break:keep-all;
+  transition:border-color .12s, background .12s, box-shadow .12s;
 }
-.seat-box.male   { border-color:var(--boy);  --bar:var(--boy);  }
-.seat-box.female { border-color:var(--girl); --bar:var(--girl); }
+/* 책상 앞판 — 학생이 앉는 쪽 모서리를 조금 진하게 */
+.desk::after{
+  content:''; position:absolute; background:var(--deskEdge); opacity:.22;
+}
+.face-up    > .desk::after{ left:12%; right:12%; bottom:0; height:5px; }
+.face-down  > .desk::after{ left:12%; right:12%; top:0;    height:5px; }
+.face-left  > .desk::after{ top:12%; bottom:12%; right:0;  width:5px;  }
+.face-right > .desk::after{ top:12%; bottom:12%; left:0;   width:5px;  }
+
+.chair{
+  position:relative; flex:0 0 auto; align-self:center;
+  background:var(--chairColor); border-radius:6px;
+}
+.face-up > .chair, .face-down > .chair{ width:42%; height:var(--chairSize); }
+.face-left > .chair, .face-right > .chair{ width:var(--chairSize); height:42%; }
+/* 등받이 — 책상에서 먼 쪽 */
+.chair::after{ content:''; position:absolute; background:rgba(90,70,40,.22); border-radius:999px; }
+.face-up    > .chair::after{ left:12%; right:12%; bottom:-1px; height:3px; }
+.face-down  > .chair::after{ left:12%; right:12%; top:-1px;    height:3px; }
+.face-left  > .chair::after{ top:12%; bottom:12%; right:-1px;  width:3px;  }
+.face-right > .chair::after{ top:12%; bottom:12%; left:-1px;   width:3px;  }
+
+.seat-box.male   { --deskEdge:var(--boy);  --chairColor:#a9d6f6; }
+.seat-box.female { --deskEdge:var(--girl); --chairColor:#f7bdd6; }
+.seat-box.empty  { --deskEdge:#e0d5c0; --deskBg:#faf5ea; --chairColor:#e7ddca; }
+.seat-box.empty > .desk{ border-style:dashed; box-shadow:none; }
+
 .seat-name{
   font-size:var(--seat-font); line-height:1.15; text-align:center;
   padding:0 .15rem; word-break:keep-all; overflow-wrap:anywhere;
 }
-.seat-tag{
-  position:absolute; top:9px; left:9px;
-  font-size:.6rem; font-weight:700; color:#fff;
-  background:#d9cdb8; border-radius:999px; padding:1px 6px;
-  pointer-events:none; font-family:'Gaegu',cursive;
-}
-.seat-box.male   .seat-tag{ background:var(--boy);  }
-.seat-box.female .seat-tag{ background:var(--girl); }
-.seat-box.empty{ background:#faf5ea; border-style:dashed; border-color:#e0d5c0; box-shadow:none; }
-.seat-box.empty::before{ display:none; }
 .empty-label{ font-family:'Gaegu',cursive; font-size:.85rem; color:#c9bca6; }
 
-.delete-btn{
-  position:absolute; top:4px; right:5px; z-index:3;
-  border:none; background:transparent; cursor:pointer;
-  color:#d8cdb9; font-size:.85rem; padding:4px 6px; line-height:1;
+.seat-tag{
+  position:absolute; top:6px; left:7px; z-index:2;
+  font-size:.6rem; font-weight:700; color:#fff;
+  background:var(--deskEdge); border-radius:999px; padding:1px 6px;
+  pointer-events:none; font-family:'Gaegu',cursive;
+}
+
+.desk-btn{
+  position:absolute; z-index:3; border:none; background:transparent; cursor:pointer;
+  color:#cfc3ae; font-size:.8rem; padding:4px 6px; line-height:1;
   opacity:0; transition:opacity .15s, color .15s;
 }
-.seat-box:hover .delete-btn{ opacity:1; }
+.delete-btn{ top:2px;    right:3px; }
+.rotate-btn{ bottom:2px; right:3px; font-size:.85rem; }
+.seat-box:hover .desk-btn{ opacity:1; }
 .delete-btn:hover{ color:#e2708a; }
+.rotate-btn:hover{ color:var(--accent); }
+/* 손가락으로 쓰는 기기엔 hover 가 없다 — 흐리게라도 늘 보이게 */
+@media (hover:none){ .desk-btn{ opacity:.4; } }
+
 .add-btn{
-  margin-top:.4rem; border:2px dashed #d9cdb8; background:#fff;
+  border:2px dashed #d9cdb8; background:#fff;
   color:#a3937f; border-radius:999px; padding:.2rem .7rem;
-  font-family:inherit; font-size:.75rem; cursor:pointer;
+  font-family:inherit; font-size:.75rem; cursor:pointer; margin-top:.3rem;
 }
 .add-btn:hover{ border-color:var(--accent); color:var(--accent); }
 
 /* 제약 규칙이 걸린 자리 표시 */
-.seat-box.ruled::after{
-  content:'📌'; position:absolute; bottom:4px; right:6px;
-  font-size:.65rem; opacity:.75; pointer-events:none;
+.seat-box.ruled > .desk::before{
+  content:'📌'; position:absolute; bottom:3px; left:5px;
+  font-size:.65rem; opacity:.75; pointer-events:none; z-index:2;
 }
 
 /* ── 드래그 ────────────────────────────────── */
 .seat-box.draggable{ cursor:grab; touch-action:manipulation; }
 .seat-box.lifted{ opacity:.3; transform:scale(.94); }
-.seat-box.drop-target{
+.seat-box.drop-target{ transform:scale(1.05); }
+.seat-box.drop-target > .desk{
   border-color:var(--accent) !important; border-style:dashed;
-  background:#eefaf2 !important; transform:scale(1.05);
-  box-shadow:0 0 0 4px rgba(63,155,109,.18);
+  background:#eefaf2 !important;
+  box-shadow:0 0 0 4px rgba(63,155,109,.18) !important;
 }
 #dragGhost{
   position:fixed; z-index:9999; pointer-events:none;
   transform:translate(-50%,-50%) rotate(-4deg) scale(1.06);
-  box-shadow:0 12px 26px rgba(0,0,0,.28) !important;
   opacity:.96;
 }
+#dragGhost > .desk{ box-shadow:0 12px 26px rgba(0,0,0,.28) !important; }
 
 /* ── 교실(칠판) 모드 ───────────────────────── */
 body.board-mode{ padding:0 !important; background:#f7f2e6; }
@@ -170,6 +206,7 @@ body.board-mode #captureArea{
 }
 body.board-mode #seatingGrid{ flex:1; align-content:start; }
 body.board-mode #exitBoardBtn{ display:inline-flex; }
+body.board-mode .desk-btn, body.board-mode .add-btn{ display:none; }
 #exitBoardBtn{ display:none; position:fixed; top:14px; right:16px; z-index:500; }
 
 @media print{
@@ -249,6 +286,11 @@ body.board-mode #exitBoardBtn{ display:inline-flex; }
         <option value="2x2">🍀 2열 2행 (4인 모둠)</option>
         <option value="2x1">👯 2열 1행 (짝꿍)</option>
       </select>
+      <label class="flex items-center gap-1.5 mt-1.5 text-xs text-[#a3937f] cursor-pointer select-none">
+        <input id="faceEachOther" type="checkbox" checked class="accent-[#3f9b6d] cursor-pointer"
+               onchange="onFacingToggle()">
+        모둠은 책상을 돌려 마주보게 <span class="text-[#c9bca6]">(4인 모둠 · 과학실)</span>
+      </label>
     </div>
   </div>
 
@@ -685,8 +727,13 @@ const GROUP_COLORS = [
     { border:'#b183d6', bg:'#f6f1fd' },
 ];
 
-function newSeat(r, c, gRow) {
-    return { name:'', gender:'', tag:'', r, c, gRow, colors:null };
+/* 책상이 바라보는 방향 — 학생이 앉는 자리는 그 반대편이다.
+   'up' 이 칠판 쪽. 모둠으로 모을 때 옆줄 책상을 90도 돌린다. */
+const FACES = ['up', 'right', 'down', 'left'];
+const nextFace = f => FACES[(FACES.indexOf(f) + 1) % 4];
+
+function newSeat(r, c, gRow, face) {
+    return { name:'', gender:'', tag:'', r, c, gRow, colors:null, face: face || 'up' };
 }
 
 /** student 는 { n: 이름, g: 성별 } — 성별은 명단 칸에서 정해져 따라다닌다 */
@@ -809,6 +856,11 @@ function buildPlan(layout, malesIn, femalesIn, slotHint) {
 
     const per = cols * rows;
 
+    /* 모둠 책상 마주보기 — 왼쪽 줄은 오른쪽을, 오른쪽 줄은 왼쪽을 본다.
+       4인 모둠(2×2)과 과학실에만 걸고, 나머지는 다 앞을 본다. */
+    const groupFacing = $('faceEachOther').checked && (layout === 'science' || layout === '2x2');
+    const faceInGroup = (c, cols) => !groupFacing ? 'up' : (c < cols / 2 ? 'right' : 'left');
+
     /* 과학실: 조마다 성별을 하나로 통일하고, 조 순서를 섞는다 */
     let blockGenders = [];
     if (layout === 'science') {
@@ -844,7 +896,7 @@ function buildPlan(layout, malesIn, femalesIn, slotHint) {
                 want = (r % 2 === 0) ? startGender : (startGender === 'male' ? 'female' : 'male');
             }
             for (let c = 0; c < cols; c++) {
-                const seat = newSeat(r, c, blockRow * rows + r);
+                const seat = newSeat(r, c, blockRow * rows + r, faceInGroup(c, cols));
                 // 원하는 성별이 동나면 남은 학생으로 채운다 (아무도 빠뜨리지 않게).
                 // 과학실은 '조마다 동성'이 원칙이라 섞지 않고 빈자리로 남긴다.
                 let g = want;
@@ -886,7 +938,7 @@ function syncTag(seat, layout) {
 
 function paintSeat(el) {
     const s   = el._seat;
-    const cls = ['seat-box'];
+    const cls = ['seat-box', `face-${s.face || 'up'}`];
 
     if (!s.name) cls.push('empty');
     else {
@@ -895,22 +947,25 @@ function paintSeat(el) {
     }
     el.className = cls.join(' ');
 
+    // 어학실 개인버전은 모둠 색을 책상에 입힌다
     if (s.colors && s.name) {
-        el.style.borderColor = s.colors.border;
-        el.style.background  = s.colors.bg;
-        el.style.setProperty('--bar', s.colors.border);
+        el.style.setProperty('--deskEdge', s.colors.border);
+        el.style.setProperty('--deskBg',   s.colors.bg);
     } else {
-        el.style.borderColor = '';
-        el.style.background  = '';
-        el.style.removeProperty('--bar');
+        el.style.removeProperty('--deskEdge');
+        el.style.removeProperty('--deskBg');
     }
 
-    el.innerHTML = s.name
-        ? `<span class="seat-tag"${s.colors ? ` style="background:${s.colors.border}"` : ''}>${escapeHtml(s.tag)}</span>
-           <button class="delete-btn no-print" title="결석 처리">✕</button>
+    const inside = s.name
+        ? `<span class="seat-tag">${escapeHtml(s.tag)}</span>
+           <button class="desk-btn delete-btn no-print" title="결석 처리">✕</button>
+           <button class="desk-btn rotate-btn no-print" title="책상 90도 돌리기">⟳</button>
            <span class="seat-name">${escapeHtml(s.name)}</span>`
-        : `<span class="empty-label">빈자리</span>
+        : `<button class="desk-btn rotate-btn no-print" title="책상 90도 돌리기">⟳</button>
+           <span class="empty-label">빈자리</span>
            <button class="add-btn no-print">+ 학생</button>`;
+
+    el.innerHTML = `<div class="desk">${inside}</div><div class="chair"></div>`;
 }
 
 function renderPlan(plan) {
@@ -1021,11 +1076,18 @@ function warnIfOverflow(total) {
 document.addEventListener('click', e => {
     const delBtn = e.target.closest('.delete-btn');
     const addBtn = e.target.closest('.add-btn');
-    if (!delBtn && !addBtn) return;
+    const rotBtn = e.target.closest('.rotate-btn');
+    if (!delBtn && !addBtn && !rotBtn) return;
 
     const el = e.target.closest('.seat-box');
     if (!el || !el._seat) return;
     e.stopPropagation();
+
+    if (rotBtn) {
+        el._seat.face = nextFace(el._seat.face || 'up');
+        paintSeat(el);
+        return;
+    }
 
     if (delBtn) {
         if (!confirm(`${el._seat.name} 학생을 결석 처리하고 자리를 비울까요?`)) return;
@@ -1062,7 +1124,7 @@ function seatUnder(x, y) {
 
 function onPointerDown(e) {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
-    if (e.target.closest('.delete-btn') || e.target.closest('.add-btn')) return;
+    if (e.target.closest('.desk-btn') || e.target.closest('.add-btn')) return;
 
     const el = e.target.closest('.seat-box');
     if (!el || !el.classList.contains('draggable')) return;
@@ -1087,7 +1149,7 @@ function startDrag(x, y) {
     ghost.style.height = rect.height + 'px';
     ghost.style.left   = x + 'px';
     ghost.style.top    = y + 'px';
-    ghost.querySelectorAll('.delete-btn, .add-btn').forEach(b => b.remove());
+    ghost.querySelectorAll('.desk-btn, .add-btn').forEach(b => b.remove());
     document.body.appendChild(ghost);
 
     el.classList.add('lifted');
@@ -1190,7 +1252,7 @@ async function savePlan() {
     const cls  = currentClass();
     const data = {
         layout:  currentPlan.layout,
-        seats:   flatSeats(currentPlan).map(s => ({ n: s.name || '', g: s.gender || '' })),
+        seats:   flatSeats(currentPlan).map(s => ({ n: s.name || '', g: s.gender || '', f: s.face || 'up' })),
         savedAt: new Date().toISOString(),
     };
     savedPlanRaw = data;
@@ -1223,6 +1285,7 @@ function applyPlan(raw) {
         const src = raw.seats[i];
         s.name   = src ? src.n : '';
         s.gender = src ? src.g : '';
+        s.face   = (src && src.f) || 'up';   // 방향을 저장하기 전에 만든 배치는 다 앞을 본다
         syncTag(s, raw.layout);
     });
     plan.savedAt = raw.savedAt;
@@ -1312,6 +1375,23 @@ function downloadImage() {
         .catch(() => toast('이미지 저장에 실패했어요.'));
 }
 
+const LS_FACING = 'classroom_seats_facing';
+
+function onFacingToggle() {
+    const on = $('faceEachOther').checked;
+    localStorage.setItem(LS_FACING, on ? '1' : '0');
+
+    const L = $('layoutSelect').value;
+    if (L !== 'science' && L !== '2x2') { toast('4인 모둠과 과학실에만 걸리는 설정이에요.'); return; }
+    if (!currentPlan) return;
+
+    // 자리는 그대로 두고 책상 방향만 돌린다
+    currentPlan.containers.forEach(cont => cont.seats.forEach(seat => {
+        seat.face = on ? (seat.c < cont.cols / 2 ? 'right' : 'left') : 'up';
+    }));
+    renderPlan(currentPlan);
+}
+
 function setSeatFont(v, syncSlider) {
     const n = parseFloat(v);
     document.documentElement.style.setProperty('--seat-font', n + 'rem');
@@ -1352,6 +1432,7 @@ window.addEventListener('load', () => {
     document.addEventListener('pointercancel', onPointerUp);
 
     setSeatFont($('fontRange').value);
+    $('faceEachOther').checked = localStorage.getItem(LS_FACING) !== '0';
     renderRules();
     changeClass();
 });
