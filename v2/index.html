@@ -24,6 +24,7 @@
 }
 
 *{ -webkit-tap-highlight-color: transparent; }
+[hidden]{ display:none !important; }   /* flex/grid 가 hidden 을 이기지 못하게 */
 body{
   font-family:'Jua', 'Apple SD Gothic Neo', sans-serif;
   color:var(--ink);
@@ -61,6 +62,17 @@ body{
 }
 .field:focus{ border-color:var(--accent); }
 label.cap{ font-size:.78rem; color:#a3937f; display:block; margin-bottom:.25rem; }
+
+.roster-head{
+  font-size:.8rem; padding:.25rem .7rem; border-radius:999px 999px 0 0;
+  border:2.5px solid; border-bottom:none; display:inline-block; margin-left:.35rem;
+}
+.roster-head.male  { color:#3f7cb8; background:var(--boy-soft);  border-color:var(--boy);  }
+.roster-head.female{ color:#c25b8b; background:var(--girl-soft); border-color:var(--girl); }
+.roster-head span{ opacity:.65; }
+.roster-box{ border-top-left-radius:6px; }
+#maleInput:focus  { border-color:var(--boy);  }
+#femaleInput:focus{ border-color:var(--girl); }
 
 /* ── 칠판 ──────────────────────────────────── */
 .chalkboard{
@@ -240,14 +252,28 @@ body.board-mode #exitBoardBtn{ display:inline-flex; }
     </div>
   </div>
 
-  <!-- 명단 -->
+  <!-- 명단 : 왼쪽 남학생 · 오른쪽 여학생 -->
   <div class="mb-3">
     <div class="flex items-end justify-between mb-1">
-      <label class="cap mb-0" for="studentInput">명단 <span class="text-[#c9bca6]">· 1~50번 남학생 / 51번~ 여학생</span></label>
+      <label class="cap mb-0">명단 <span class="text-[#c9bca6]">· 칸에 넣은 쪽이 그 학생의 성별</span></label>
       <span id="countHint" class="text-xs text-[#a3937f]"></span>
     </div>
-    <textarea id="studentInput" class="field h-24 text-sm leading-relaxed"
-      placeholder="1 강민준, 2 이서준, 51 김서연, 52 박지우 …" oninput="updateCountHint()"></textarea>
+    <div class="grid grid-cols-2 gap-2">
+      <div>
+        <div class="roster-head male">👦 남학생 <span id="maleCount"></span></div>
+        <textarea id="maleInput" class="field roster-box h-28 text-sm leading-relaxed"
+          placeholder="1 강민준&#10;2 이서준&#10;3 박도윤" oninput="updateCountHint()"></textarea>
+      </div>
+      <div>
+        <div class="roster-head female">👧 여학생 <span id="femaleCount"></span></div>
+        <textarea id="femaleInput" class="field roster-box h-28 text-sm leading-relaxed"
+          placeholder="51 김서연&#10;52 박지우&#10;53 윤지아" oninput="updateCountHint()"></textarea>
+      </div>
+    </div>
+    <div id="rosterWarn" hidden class="mt-2 text-xs rounded-2xl border-2 border-[#f0dcae] bg-[#fffaef] px-3 py-2 text-[#a2803c] flex items-center justify-between gap-2 flex-wrap">
+      <span id="rosterWarnText"></span>
+      <button class="btn btn-sm btn-soft shrink-0" onclick="fixNumbers()">번호 맞추기</button>
+    </div>
   </div>
 
   <!-- ── 자리 규칙 ── -->
@@ -373,29 +399,120 @@ function studentKey(s) {
     return m ? m[0] : String(s).trim();
 }
 
+/** 번호로 성별 짐작 — 저장된 한 줄짜리 명단을 두 칸으로 가를 때만 쓴다 */
 function genderOf(s) {
     const m = String(s).match(/\d+/);
     return (m && parseInt(m[0], 10) >= FEMALE_FROM) ? 'female' : 'male';
 }
 
-/** 명단 textarea → 학생 문자열 배열 */
-function parseStudents() {
-    return $('studentInput').value
+function numOf(s)    { const m = String(s).match(/\d+/); return m ? parseInt(m[0], 10) : null; }
+function stripNum(s) { return String(s).replace(/^\s*\d+\s*/, '').trim(); }
+
+function parseBox(id) {
+    return $(id).value
         .split(/[,\n]/)
         .map(s => s.trim())
         .filter(s => s !== "" && s !== "📡 불러오는 중...");
 }
 
-function splitByGender(students) {
-    const males = [], females = [];
-    students.forEach(s => (genderOf(s) === 'female' ? females : males).push(s));
-    return { males, females };
+/** 성별은 '어느 칸에 있느냐'로 정해진다 */
+function splitByGender() {
+    return { males: parseBox('maleInput'), females: parseBox('femaleInput') };
+}
+
+function parseStudents() {
+    const { males, females } = splitByGender();
+    return [...males, ...females];
+}
+
+/** 저장돼 있던 한 줄짜리 명단을 번호 기준으로 두 칸에 나눠 담는다 */
+function fillBoxesFrom(list) {
+    const all = String(list || '').split(/[,\n]/).map(x => x.trim()).filter(Boolean);
+    $('maleInput').value   = all.filter(x => genderOf(x) === 'male').join('\n');
+    $('femaleInput').value = all.filter(x => genderOf(x) === 'female').join('\n');
+}
+
+/** 두 칸을 예전 버전도 읽을 수 있는 한 줄짜리 명단으로 합친다 */
+function joinBoxes() {
+    return parseStudents().join('\n');
 }
 
 function updateCountHint() {
-    const { males, females } = splitByGender(parseStudents());
-    $('countHint').textContent = `남 ${males.length} · 여 ${females.length} · 모두 ${males.length + females.length}명`;
+    const { males, females } = splitByGender();
+    $('maleCount').textContent   = males.length   ? `· ${males.length}명`   : '';
+    $('femaleCount').textContent = females.length ? `· ${females.length}명` : '';
+    $('countHint').textContent   = `모두 ${males.length + females.length}명`;
+    checkRoster();
     refreshRuleSelects();
+}
+
+/* ── 칸과 번호가 어긋나는지 살핀다 ─────────────────────────────
+   성별은 칸으로 정하지만, 예전 버전은 번호(51번~)로 읽는다.
+   어긋난 채 저장하면 두 버전이 같은 학생을 다르게 본다.        */
+function rosterIssues() {
+    const { males, females } = splitByGender();
+    const wrongBox = [
+        ...males.filter(s   => { const n = numOf(s); return n !== null && n >= FEMALE_FROM; }),
+        ...females.filter(s => { const n = numOf(s); return n === null || n <  FEMALE_FROM; }),
+    ];
+    const seen = new Set(), dupes = new Set();
+    parseStudents().forEach(s => {
+        const k = studentKey(s);
+        if (seen.has(k)) dupes.add(k); else seen.add(k);
+    });
+    return { wrongBox, dupes: [...dupes] };
+}
+
+function checkRoster() {
+    const { wrongBox, dupes } = rosterIssues();
+    const box = $('rosterWarn');
+    if (!wrongBox.length && !dupes.length) { box.hidden = true; return; }
+
+    const parts = [];
+    if (wrongBox.length) parts.push(`번호가 칸과 안 맞는 학생 — ${wrongBox.join(', ')} (남학생 1~${FEMALE_FROM - 1}번 / 여학생 ${FEMALE_FROM}번~). 이대로 두면 예전 버전이 반대 성별로 읽습니다.`);
+    if (dupes.length)    parts.push(`번호가 겹칩니다 — ${dupes.join(', ')}번.`);
+    $('rosterWarnText').textContent = parts.join(' ');
+    box.hidden = false;
+}
+
+/** 칸에 맞게 번호를 다시 매긴다 (이미 맞는 번호는 그대로 둔다) */
+function fixNumbers() {
+    const groups = [
+        { id:'maleInput',   lo:1,           hi:FEMALE_FROM - 1 },
+        { id:'femaleInput', lo:FEMALE_FROM, hi:999 },
+    ].map(g => ({ ...g, list: parseBox(g.id) }));
+
+    const used = new Set();
+    groups.forEach(g => {
+        g.keep = g.list.map(s => {
+            const n = numOf(s);
+            const ok = n !== null && n >= g.lo && n <= g.hi && !used.has(n);
+            if (ok) used.add(n);
+            return ok ? n : null;
+        });
+    });
+
+    const renamed = {};   // 옛 번호 → 새 번호 (규칙을 따라 옮기려고)
+    groups.forEach(g => {
+        $(g.id).value = g.list.map((s, i) => {
+            if (g.keep[i] !== null) return s;
+            let n = g.lo;
+            while (used.has(n)) n++;
+            used.add(n);
+            const old = studentKey(s);
+            if (old !== String(n)) renamed[old] = String(n);
+            return `${n} ${stripNum(s)}`;
+        }).join('\n');
+    });
+
+    currentRules.forEach(r => {
+        if (renamed[r.a]) r.a = renamed[r.a];
+        if (r.b && renamed[r.b]) r.b = renamed[r.b];
+    });
+
+    updateCountHint();
+    renderRules();
+    toast('번호를 칸에 맞게 고쳤어요. [명단·규칙 저장]을 눌러 저장하세요.', 4200);
 }
 
 function updateBadge(state) {
@@ -536,15 +653,16 @@ function newSeat(r, c, gRow) {
     return { name:'', gender:'', tag:'', r, c, gRow, colors:null };
 }
 
+/** student 는 { n: 이름, g: 성별 } — 성별은 명단 칸에서 정해져 따라다닌다 */
 function place(seat, student) {
-    seat.name   = student;
-    seat.gender = genderOf(student);
-    seat.tag    = seat.gender === 'female' ? 'F' : 'M';
+    seat.name   = student.n;
+    seat.gender = student.g;
+    seat.tag    = student.g === 'female' ? 'F' : 'M';
 }
 
 function buildPlan(layout, malesIn, femalesIn, slotHint) {
-    const males   = [...malesIn];
-    const females = [...femalesIn];
+    const males   = malesIn.map(n   => ({ n, g:'male'   }));
+    const females = femalesIn.map(n => ({ n, g:'female' }));
     const total   = males.length + females.length;
 
     /* ── 자유배치 : 8×7 넓은 캔버스 ───────────────── */
@@ -639,7 +757,7 @@ function buildPlan(layout, malesIn, femalesIn, slotHint) {
                 seat.colors = GROUP_COLORS[c];
                 seat.tag    = `${c + 1}-${r + 1}`;
                 const s = colStudents[c][r];
-                if (s) { seat.name = s; seat.gender = genderOf(s); }
+                if (s) { seat.name = s.n; seat.gender = s.g; }
                 seats.push(seat);
             }
             containers.push({ cols:1, rows:ROWS, kind:'column', gap:'.55rem',
@@ -826,7 +944,7 @@ const LAYOUT_NOTE = {
 const MAX_TRIES = 300;
 
 function shuffleAndRender(isShuffle = true) {
-    const { males, females } = splitByGender(parseStudents());
+    const { males, females } = splitByGender();
     const layout = $('layoutSelect').value;
 
     if (!isShuffle || !currentRules.length) {
@@ -881,7 +999,7 @@ document.addEventListener('click', e => {
         return;
     }
 
-    const info = prompt("추가할 학생의 번호와 이름을 적어 주세요.\n(예: 1 강민준 또는 51 김서연)");
+    const info = prompt(`추가할 학생의 번호와 이름을 적어 주세요.\n번호로 성별을 정합니다 — 1~${FEMALE_FROM - 1}번 남학생 / ${FEMALE_FROM}번~ 여학생.\n(예: 1 강민준 또는 ${FEMALE_FROM} 김서연)`);
     if (!info || !info.trim()) return;
     el._seat.name   = info.trim();
     el._seat.gender = genderOf(info);
@@ -1009,7 +1127,7 @@ async function writeDoc(docId, patch) {
 
 async function saveCurrentList() {
     const cls  = currentClass();
-    const list = $('studentInput').value;
+    const list = joinBoxes();
     const btn  = $('saveBtn');
 
     localStorage.setItem(LS_LIST + cls, list);
@@ -1059,7 +1177,7 @@ function applyPlan(raw) {
     if (!raw || !raw.seats || !raw.seats.length) return false;
     $('layoutSelect').value = raw.layout;
 
-    const { males, females } = splitByGender(parseStudents());
+    const { males, females } = splitByGender();
     const plan  = buildPlan(raw.layout, males, females, raw.seats.length);
     const seats = flatSeats(plan);
 
@@ -1094,11 +1212,11 @@ async function changeClass() {
     const cls = currentClass();
     $('chalkboardTitle').textContent = `${cls} 자리 배치도`;
 
-    const input = $('studentInput');
     let list = null, rules = null, plan = null;
 
     if (db) {
-        input.value = "📡 불러오는 중...";
+        $('maleInput').value = "📡 불러오는 중...";
+        $('femaleInput').value = "";
         try {
             const [listSnap, planSnap] = await Promise.all([
                 db.collection(COLLECTION).doc(cls).get(),
@@ -1128,7 +1246,7 @@ async function changeClass() {
     if (rules === null) { try { rules = JSON.parse(localStorage.getItem(LS_RULES + cls) || '[]'); } catch { rules = []; } }
     if (plan  === null) { try { plan  = JSON.parse(localStorage.getItem(LS_PLAN  + cls) || 'null'); } catch { plan = null; } }
 
-    input.value  = list;
+    fillBoxesFrom(list);
     currentRules = Array.isArray(rules) ? rules : [];
     savedPlanRaw = plan;
 
