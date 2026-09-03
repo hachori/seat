@@ -262,12 +262,12 @@ body.board-mode #exitBoardBtn{ display:inline-flex; }
       <div>
         <div class="roster-head male">👦 남학생 <span id="maleCount"></span></div>
         <textarea id="maleInput" class="field roster-box h-28 text-sm leading-relaxed"
-          placeholder="1 강민준&#10;2 이서준&#10;3 박도윤" oninput="updateCountHint()"></textarea>
+          oninput="updateCountHint()"></textarea>
       </div>
       <div>
         <div class="roster-head female">👧 여학생 <span id="femaleCount"></span></div>
         <textarea id="femaleInput" class="field roster-box h-28 text-sm leading-relaxed"
-          placeholder="51 김서연&#10;52 박지우&#10;53 윤지아" oninput="updateCountHint()"></textarea>
+          oninput="updateCountHint()"></textarea>
       </div>
     </div>
     <div id="rosterWarn" hidden class="mt-2 text-xs rounded-2xl border-2 border-[#f0dcae] bg-[#fffaef] px-3 py-2 text-[#a2803c] flex items-center justify-between gap-2 flex-wrap">
@@ -360,7 +360,29 @@ const PLAN_SUFFIX  = "__plan";    // 배치·규칙은 "3-3-영어__plan" 처럼
 const LS_LIST      = "classroom_seats_class_";
 const LS_PLAN      = "classroom_seats_plan_";
 const LS_RULES     = "classroom_seats_rules_";
-const FEMALE_FROM  = 51;   // 이 번호부터 여학생
+const NUM_SPLIT    = 51;   // 낮은 번호대 / 높은 번호대를 가르는 번호
+
+/* 번호와 성별의 관계는 학년마다 다르다.
+     3·5학년 — 낮은 번호(1~50)가 여학생, 51번부터 남학생
+     4·6학년 — 그 반대
+   반 이름 첫 글자가 학년이다 ("5-2-과학" → 5학년).            */
+function gradeOf(cls) {
+    const m = String(cls).match(/^(\d)/);
+    return m ? parseInt(m[1], 10) : null;
+}
+
+/** 이 반에서 '낮은 번호대'가 어느 성별인가 */
+function lowGender(cls) {
+    const g = gradeOf(cls === undefined ? currentClass() : cls);
+    return (g === 3 || g === 5) ? 'female' : 'male';
+}
+
+/** 성별 → 그 성별이 쓰는 번호 범위 */
+function numRange(gender, cls) {
+    return (gender === lowGender(cls))
+        ? { lo: 1,         hi: NUM_SPLIT - 1, label: `1~${NUM_SPLIT - 1}번` }
+        : { lo: NUM_SPLIT, hi: 999,           label: `${NUM_SPLIT}번~`     };
+}
 
 let db = null;
 try { firebase.initializeApp(firebaseConfig); db = firebase.firestore(); }
@@ -400,9 +422,11 @@ function studentKey(s) {
 }
 
 /** 번호로 성별 짐작 — 저장된 한 줄짜리 명단을 두 칸으로 가를 때만 쓴다 */
-function genderOf(s) {
-    const m = String(s).match(/\d+/);
-    return (m && parseInt(m[0], 10) >= FEMALE_FROM) ? 'female' : 'male';
+function genderOf(s, cls) {
+    const m    = String(s).match(/\d+/);
+    const low  = lowGender(cls);
+    const high = low === 'female' ? 'male' : 'female';
+    return (m && parseInt(m[0], 10) >= NUM_SPLIT) ? high : low;
 }
 
 function numOf(s)    { const m = String(s).match(/\d+/); return m ? parseInt(m[0], 10) : null; }
@@ -432,16 +456,29 @@ function fillBoxesFrom(list) {
     $('femaleInput').value = all.filter(x => genderOf(x) === 'female').join('\n');
 }
 
-/** 두 칸을 예전 버전도 읽을 수 있는 한 줄짜리 명단으로 합친다 */
+/** 두 칸을 예전 버전도 읽을 수 있는 한 줄짜리 명단으로 합친다.
+    학년에 따라 남/여 번호대가 뒤바뀌므로 번호순으로 정렬해 둔다 —
+    그래야 저장된 명단의 순서가 학년과 상관없이 늘 같다. */
 function joinBoxes() {
-    return parseStudents().join('\n');
+    return parseStudents()
+        .map((s, i) => ({ s, i, n: numOf(s) }))
+        .sort((a, b) => (a.n === null) - (b.n === null) || (a.n - b.n) || (a.i - b.i))
+        .map(x => x.s)
+        .join('\n');
 }
 
 function updateCountHint() {
     const { males, females } = splitByGender();
-    $('maleCount').textContent   = males.length   ? `· ${males.length}명`   : '';
-    $('femaleCount').textContent = females.length ? `· ${females.length}명` : '';
+    const mR = numRange('male'), fR = numRange('female');
+
+    $('maleCount').textContent   = `· ${mR.label}${males.length   ? ` · ${males.length}명`   : ''}`;
+    $('femaleCount').textContent = `· ${fR.label}${females.length ? ` · ${females.length}명` : ''}`;
     $('countHint').textContent   = `모두 ${males.length + females.length}명`;
+
+    // 예시도 학년 규칙에 맞춰 보여 준다
+    $('maleInput').placeholder   = `${mR.lo} 강민준\n${mR.lo + 1} 이서준`;
+    $('femaleInput').placeholder = `${fR.lo} 김서연\n${fR.lo + 1} 박지우`;
+
     checkRoster();
     refreshRuleSelects();
 }
@@ -451,10 +488,9 @@ function updateCountHint() {
    어긋난 채 저장하면 두 버전이 같은 학생을 다르게 본다.        */
 function rosterIssues() {
     const { males, females } = splitByGender();
-    const wrongBox = [
-        ...males.filter(s   => { const n = numOf(s); return n !== null && n >= FEMALE_FROM; }),
-        ...females.filter(s => { const n = numOf(s); return n === null || n <  FEMALE_FROM; }),
-    ];
+    const mR = numRange('male'), fR = numRange('female');
+    const off = (s, R) => { const n = numOf(s); return n === null || n < R.lo || n > R.hi; };
+    const wrongBox = [...males.filter(s => off(s, mR)), ...females.filter(s => off(s, fR))];
     const seen = new Set(), dupes = new Set();
     parseStudents().forEach(s => {
         const k = studentKey(s);
@@ -469,7 +505,7 @@ function checkRoster() {
     if (!wrongBox.length && !dupes.length) { box.hidden = true; return; }
 
     const parts = [];
-    if (wrongBox.length) parts.push(`번호가 칸과 안 맞는 학생 — ${wrongBox.join(', ')} (남학생 1~${FEMALE_FROM - 1}번 / 여학생 ${FEMALE_FROM}번~). 이대로 두면 예전 버전이 반대 성별로 읽습니다.`);
+    if (wrongBox.length) parts.push(`번호가 칸과 안 맞는 학생 — ${wrongBox.join(', ')} (${gradeOf(currentClass())}학년은 남학생 ${numRange('male').label} / 여학생 ${numRange('female').label}). 이대로 두면 예전 버전이 반대 성별로 읽습니다.`);
     if (dupes.length)    parts.push(`번호가 겹칩니다 — ${dupes.join(', ')}번.`);
     $('rosterWarnText').textContent = parts.join(' ');
     box.hidden = false;
@@ -478,8 +514,8 @@ function checkRoster() {
 /** 칸에 맞게 번호를 다시 매긴다 (이미 맞는 번호는 그대로 둔다) */
 function fixNumbers() {
     const groups = [
-        { id:'maleInput',   lo:1,           hi:FEMALE_FROM - 1 },
-        { id:'femaleInput', lo:FEMALE_FROM, hi:999 },
+        { id:'maleInput',   ...numRange('male')   },
+        { id:'femaleInput', ...numRange('female') },
     ].map(g => ({ ...g, list: parseBox(g.id) }));
 
     const used = new Set();
@@ -999,7 +1035,9 @@ document.addEventListener('click', e => {
         return;
     }
 
-    const info = prompt(`추가할 학생의 번호와 이름을 적어 주세요.\n번호로 성별을 정합니다 — 1~${FEMALE_FROM - 1}번 남학생 / ${FEMALE_FROM}번~ 여학생.\n(예: 1 강민준 또는 ${FEMALE_FROM} 김서연)`);
+    const info = prompt(`추가할 학생의 번호와 이름을 적어 주세요.\n`
+        + `${gradeOf(currentClass())}학년은 번호로 성별을 정합니다 — `
+        + `남학생 ${numRange('male').label} / 여학생 ${numRange('female').label}.`);
     if (!info || !info.trim()) return;
     el._seat.name   = info.trim();
     el._seat.gender = genderOf(info);
