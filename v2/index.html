@@ -184,6 +184,12 @@ label.cap{ font-size:.78rem; color:#a3937f; display:block; margin-bottom:.25rem;
 }
 .add-btn:hover{ border-color:var(--accent); color:var(--accent); }
 
+/* 모둠 바닥판 — 짝꿍 두 쌍이 한 모둠임을 보여 준다 */
+.seat-zone{
+  border:3px solid #efe6d5; border-radius:24px; background:#fffdf8;
+  margin:-.45rem; pointer-events:none;
+}
+
 /* 제약 규칙이 걸린 자리 표시 */
 .seat-box.ruled > .desk::before{
   content:'📌'; position:absolute; bottom:3px; left:5px;
@@ -290,7 +296,7 @@ body.board-mode .desk-btn, body.board-mode .add-btn{ display:none; }
       <label class="cap" for="layoutSelect">교실 모양</label>
       <select id="layoutSelect" class="field text-lg cursor-pointer" onchange="shuffleAndRender()">
         <option value="free">🔀 자유배치 (8×7, 맘대로 이동)</option>
-        <option value="zigzag">🪑 지그재그 짝꿍 (앞 3쌍 / 뒤 2쌍)</option>
+        <option value="zigzag">🪑 지그재그 짝꿍 (앞 3모둠 · 뒤 2모둠, 20자리)</option>
         <option value="2x3" selected>🎧 어학실 (2열 3행, 6인 세로형)</option>
         <option value="language_individual">🎧 어학실 개인버전 (5모둠 × 4)</option>
         <option value="science">🧪 과학실 (4인 1조, 2열)</option>
@@ -786,68 +792,50 @@ function buildPlan(layout, malesIn, femalesIn, slotHint) {
                  containers:[{ cols:COLS, rows:ROWS, kind:'grid', gap:'.55rem', compact:true, seats }] };
     }
 
-    /* ── 지그재그 짝꿍 : 앞 3쌍 / 뒤 2쌍이 엇갈리는 통로형 ── */
+    /* ── 지그재그 짝꿍 : 앞 3모둠 · 뒤 2모둠 (20자리 고정) ──
+       한 모둠 = 짝꿍 2쌍(가로 2 × 세로 2). 뒤 모둠은 앞 모둠 사이 통로 뒤에
+       놓여 앞이 트인다. 통로에는 책상을 두지 않는다.                        */
     if (layout === 'zigzag') {
-        const COLS     = 8;
-        const BLOCK_A  = [0, 1, 3, 4, 6, 7];   // 통로 = 2열·5열
-        const BLOCK_B  = [2, 3, 5, 6];         // 앞 블록과 엇갈림
-        const targetRows = slotHint ? Math.max(1, Math.round(slotHint / COLS)) : null;
-
-        const rowPattern = [];
-        let placed = 0, blockIdx = 0;
-        const needMore = () => targetRows
-            ? rowPattern.length < targetRows
-            : (placed < total || rowPattern.length === 0);
-
-        while (needMore()) {
-            const blockCols = (blockIdx % 2 === 0) ? BLOCK_A : BLOCK_B;
-            if (blockIdx > 0) rowPattern.push([]);           // 블록 사이 통로 행
-            rowPattern.push([...blockCols], [...blockCols]);
-            placed += blockCols.length * 2;
-            blockIdx++;
-        }
-        if (targetRows) {                                   // 저장된 배치를 복원할 때는 그때의 줄 수를 그대로
-            while (rowPattern.length < targetRows) rowPattern.push([]);
-            rowPattern.length = targetRows;
-        }
+        const COLS  = 8;
+        const FRONT = [[0, 1], [3, 4], [6, 7]];   // 앞 3모둠 (통로 = 2열·5열)
+        const BACK  = [[2, 3], [5, 6]];           // 뒤 2모둠 — 앞 통로 뒤로 엇갈림
+        const BLOCK_ROWS = 2;
+        const AISLE_AT   = BLOCK_ROWS;            // 앞·뒤 모둠 사이 통로 줄
+        const ROWS = BLOCK_ROWS * 2 + 1;
 
         // 짝꿍 한 쌍 = (왼쪽 여학생, 오른쪽 남학생), 한쪽이 떨어지면 남은 학생으로 채움
         const pickPair = () => [
             females.length ? females.shift() : males.shift(),
             males.length   ? males.shift()   : females.shift()
         ];
-        const assigned = {};
-        const sideAt   = {};   // 세로모드에서는 짝꿍 둘이 서로를 바라본다
-        rowPattern.forEach((blockCols, r) => {
-            for (let i = 0; i < blockCols.length; i += 2) {
-                sideAt[`${r}-${blockCols[i]}`]     = 'right';
-                sideAt[`${r}-${blockCols[i + 1]}`] = 'left';
-                if (!males.length && !females.length) continue;
-                const [left, right] = pickPair();
-                if (left)  assigned[`${r}-${blockCols[i]}`]     = left;
-                if (right) assigned[`${r}-${blockCols[i + 1]}`] = right;
-            }
-        });
 
-        // 맨 뒤의 빈 줄은 만들지 않는다 (반이 23명 이내라 여유 줄이 필요 없다)
-        if (!targetRows) {
-            let last = rowPattern.length - 1;
-            while (last > 0 && !rowPattern[last].some(c => assigned[`${last}-${c}`])) {
-                rowPattern.pop();
-                last--;
+        const seats = [], zones = [];
+        const addBlock = (pairs, rowFrom) => {
+            pairs.forEach(([cl, cr]) => zones.push({ r: rowFrom, c: cl, rows: BLOCK_ROWS, cols: 2 }));
+            for (let r = 0; r < BLOCK_ROWS; r++) {
+                const row = rowFrom + r;
+                for (const [cl, cr] of pairs) {
+                    const left  = newSeat(row, cl, row, 'right');
+                    const right = newSeat(row, cr, row, 'left');
+                    if (males.length || females.length) {
+                        const [a, b] = pickPair();
+                        if (a) place(left,  a);
+                        if (b) place(right, b);
+                    }
+                    seats.push(left, right);
+                }
             }
-        }
+        };
+        addBlock(FRONT, 0);
+        addBlock(BACK,  AISLE_AT + 1);
 
-        const seats = [];
-        for (let r = 0; r < rowPattern.length; r++)
-            for (let c = 0; c < COLS; c++) {
-                const seat = newSeat(r, c, r, sideAt[`${r}-${c}`] || sideOf(c, COLS));
-                if (assigned[`${r}-${c}`]) place(seat, assigned[`${r}-${c}`]);
-                seats.push(seat);
-            }
-
-        return { layout, mainCols:1, gap:'0',
-                 containers:[{ cols:COLS, rows:rowPattern.length, kind:'grid', gap:'.55rem', compact:true, seats }] };
+        return { layout, mainCols:1, gap:'0', containers:[{
+            cols: COLS, rows: ROWS, kind:'grid', gap:'.6rem',
+            placed: true, minColPx: 96, zonePad: true,
+            // 앞 2줄 · 통로 · 뒤 2줄
+            rowTemplate: `1fr 1fr var(--aisle, 2.2rem) 1fr 1fr`,
+            seats, zones,
+        }] };
     }
 
     /* ── 어학실 개인버전 : 5모둠 × 4자리, 완전 무작위 ── */
@@ -1016,7 +1004,9 @@ function renderPlan(plan) {
     plan.containers.forEach(cont => {
         // grid-auto-rows:1fr — 학생이 앉은 줄과 빈 줄의 높이를 똑같이 맞춘다
         const gridCss = `display:grid;grid-template-columns:repeat(${cont.cols},1fr);`
-                      + `grid-auto-rows:1fr;gap:${cont.gap};`;
+                      + (cont.rowTemplate ? `grid-template-rows:${cont.rowTemplate};`
+                                          : `grid-auto-rows:1fr;`)
+                      + `gap:${cont.gap};`;
         let host, mounted;
 
         if (cont.kind === 'column') {
@@ -1040,12 +1030,22 @@ function renderPlan(plan) {
             host.style.cssText = gridCss;
         }
 
-        if (cont.compact) host.style.minWidth = (cont.cols * 88) + 'px';
+        const minCol = cont.minColPx || (cont.compact ? 88 : 0);
+        if (minCol) host.style.minWidth = (cont.cols * minCol) + 'px';
+
+        // 모둠 바닥판 — 자리보다 먼저 넣어 뒤에 깔린다
+        (cont.zones || []).forEach(z => {
+            const pad = document.createElement('div');
+            pad.className = 'seat-zone';
+            pad.style.gridArea = `${z.r + 1} / ${z.c + 1} / ${z.r + 1 + z.rows} / ${z.c + 1 + z.cols}`;
+            host.appendChild(pad);
+        });
 
         cont.seats.forEach(seat => {
             const el = document.createElement('div');
             el._seat = seat;
             if (cont.compact) el.style.minHeight = 'calc(var(--seat-min-h) * .78)';
+            if (cont.placed)  el.style.gridArea  = `${seat.r + 1} / ${seat.c + 1}`;
             paintSeat(el);
             host.appendChild(el);
         });
@@ -1072,7 +1072,7 @@ function equalizeSeats() {
 
 const LAYOUT_NOTE = {
     free:                 '자유배치 — 좌측 위부터 채우고, 자리를 끌어서 마음대로 옮깁니다.',
-    zigzag:               '지그재그 짝꿍 — 앞 3쌍 · 뒤 2쌍이 엇갈리는 통로형. 짝꿍은 여–남 한 쌍.',
+    zigzag:               '지그재그 짝꿍 — 앞 3모둠 · 뒤 2모둠, 모두 20자리. 뒤 모둠은 앞 모둠 사이 통로 뒤에 놓여 앞이 트인다. 짝꿍은 여–남 한 쌍.',
     language_individual:  '어학실 개인버전 — 5모둠 × 4자리 완전 무작위.',
     science:              '과학실 — 4인 1조, 조마다 같은 성별.',
     '2x3':                '어학실 — 2열 3행 6인 세로형. 줄 단위 성별 교차.',
@@ -1332,6 +1332,24 @@ function applyPlan(raw) {
     const { males, females } = splitByGender();
     const plan  = buildPlan(raw.layout, males, females, raw.seats.length);
     const seats = flatSeats(plan);
+
+    // 교실 모양이 바뀌어 자리 수가 달라졌으면 그대로 되살릴 수 없다 —
+    // 앉아 있던 순서대로 다시 채운다.
+    if (seats.length !== raw.seats.length) {
+        const seated = raw.seats.filter(x => x.n);
+        seats.forEach((s, i) => {
+            const src = seated[i];
+            s.name   = src ? src.n : '';
+            s.gender = src ? src.g : '';
+            syncTag(s, raw.layout);
+        });
+        renderPlan(plan);
+        const lost = Math.max(0, seated.length - seats.length);
+        toast(lost
+            ? `교실 모양이 바뀌어 저장된 배치를 그대로 열 수 없었어요. 자리를 다시 채웠고 ${lost}명은 앉지 못했습니다.`
+            : '교실 모양이 바뀌어 저장된 배치를 그대로 열 수 없었어요. 자리를 다시 채웠습니다.', 6000);
+        return true;
+    }
 
     seats.forEach((s, i) => {
         const src = raw.seats[i];
