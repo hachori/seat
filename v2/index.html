@@ -128,6 +128,11 @@ label.cap{ font-size:.78rem; color:#a3937f; display:block; margin-bottom:.25rem;
 }
 .face-up > .chair, .face-down > .chair{ width:42%; height:var(--chairSize); }
 .face-left > .chair, .face-right > .chair{ width:var(--chairSize); height:42%; }
+
+/* 세로로 돌린 책상은 폭이 좁고 깊이가 길다 — 실제 책상을 90도 돌린 모양.
+   마주보는 짝끼리 맞붙도록 책상을 안쪽 모서리에 붙인다. */
+.seat-box.face-left, .seat-box.face-right{ min-height:calc(var(--seat-min-h) * 1.5); justify-content:flex-start; }
+.face-left > .desk, .face-right > .desk{ aspect-ratio:3/4; flex:0 0 auto; max-width:100%; }
 /* 등받이 — 책상에서 먼 쪽 */
 .chair::after{ content:''; position:absolute; background:rgba(90,70,40,.22); border-radius:999px; }
 .face-up    > .chair::after{ left:12%; right:12%; bottom:-1px; height:3px; }
@@ -289,7 +294,7 @@ body.board-mode .desk-btn, body.board-mode .add-btn{ display:none; }
       <label class="flex items-center gap-1.5 mt-1.5 text-xs text-[#a3937f] cursor-pointer select-none">
         <input id="faceEachOther" type="checkbox" checked class="accent-[#3f9b6d] cursor-pointer"
                onchange="onFacingToggle()">
-        모둠은 책상을 돌려 마주보게 <span class="text-[#c9bca6]">(4인 모둠 · 과학실)</span>
+        책상 세로모드 <span class="text-[#c9bca6]">· 90도 돌려 마주보게 (자유배치 제외)</span>
       </label>
     </div>
   </div>
@@ -732,9 +737,18 @@ const GROUP_COLORS = [
 const FACES = ['up', 'right', 'down', 'left'];
 const nextFace = f => FACES[(FACES.indexOf(f) + 1) % 4];
 
-function newSeat(r, c, gRow, face) {
-    return { name:'', gender:'', tag:'', r, c, gRow, colors:null, face: face || 'up' };
+/* sideFace = 세로모드일 때 이 자리가 바라볼 방향.
+   face 는 지금 화면에 그려질 방향 (세로모드가 꺼져 있으면 늘 'up'). */
+function newSeat(r, c, gRow, sideFace) {
+    const side = sideFace || 'up';
+    return { name:'', gender:'', tag:'', r, c, gRow, colors:null,
+             sideFace: side, face: sidewaysOn() ? side : 'up' };
 }
+
+function sidewaysOn() { return !!($('faceEachOther') || {}).checked; }
+
+/** 세로모드에서 왼쪽 절반은 오른쪽을, 오른쪽 절반은 왼쪽을 본다 */
+function sideOf(c, cols) { return c < cols / 2 ? 'right' : 'left'; }
 
 /** student 는 { n: 이름, g: 성별 } — 성별은 명단 칸에서 정해져 따라다닌다 */
 function place(seat, student) {
@@ -755,7 +769,9 @@ function buildPlan(layout, malesIn, femalesIn, slotHint) {
                               : Math.max(7, Math.ceil(total / COLS));
         const seats = [];
         for (let r = 0; r < ROWS; r++)
-            for (let c = 0; c < COLS; c++) seats.push(newSeat(r, c, r));
+            // 자유배치는 교실 모양을 직접 그리는 용도라 세로모드에서도 앞을 본다.
+            // 돌릴 책상만 ⟳ 로 하나씩 돌린다.
+            for (let c = 0; c < COLS; c++) seats.push(newSeat(r, c, r, 'up'));
 
         // 자유배치는 성별을 나누지 않고 통째로 섞어 좌측 위부터 채운다
         shuffle([...males, ...females]).forEach((s, i) => { if (seats[i]) place(seats[i], s); });
@@ -794,9 +810,12 @@ function buildPlan(layout, malesIn, femalesIn, slotHint) {
             males.length   ? males.shift()   : females.shift()
         ];
         const assigned = {};
+        const sideAt   = {};   // 세로모드에서는 짝꿍 둘이 서로를 바라본다
         rowPattern.forEach((blockCols, r) => {
             for (let i = 0; i < blockCols.length; i += 2) {
-                if (!males.length && !females.length) return;
+                sideAt[`${r}-${blockCols[i]}`]     = 'right';
+                sideAt[`${r}-${blockCols[i + 1]}`] = 'left';
+                if (!males.length && !females.length) continue;
                 const [left, right] = pickPair();
                 if (left)  assigned[`${r}-${blockCols[i]}`]     = left;
                 if (right) assigned[`${r}-${blockCols[i + 1]}`] = right;
@@ -806,7 +825,7 @@ function buildPlan(layout, malesIn, femalesIn, slotHint) {
         const seats = [];
         for (let r = 0; r < rowPattern.length; r++)
             for (let c = 0; c < COLS; c++) {
-                const seat = newSeat(r, c, r);
+                const seat = newSeat(r, c, r, sideAt[`${r}-${c}`] || sideOf(c, COLS));
                 if (assigned[`${r}-${c}`]) place(seat, assigned[`${r}-${c}`]);
                 seats.push(seat);
             }
@@ -836,7 +855,7 @@ function buildPlan(layout, malesIn, femalesIn, slotHint) {
         for (let c = 0; c < COLS; c++) {
             const seats = [];
             for (let r = 0; r < ROWS; r++) {
-                const seat = newSeat(r, 0, r);
+                const seat = newSeat(r, 0, r, c % 2 === 0 ? 'right' : 'left');
                 seat.colors = GROUP_COLORS[c];
                 seat.tag    = `${c + 1}-${r + 1}`;
                 const s = colStudents[c][r];
@@ -856,10 +875,6 @@ function buildPlan(layout, malesIn, femalesIn, slotHint) {
 
     const per = cols * rows;
 
-    /* 모둠 책상 마주보기 — 왼쪽 줄은 오른쪽을, 오른쪽 줄은 왼쪽을 본다.
-       4인 모둠(2×2)과 과학실에만 걸고, 나머지는 다 앞을 본다. */
-    const groupFacing = $('faceEachOther').checked && (layout === 'science' || layout === '2x2');
-    const faceInGroup = (c, cols) => !groupFacing ? 'up' : (c < cols / 2 ? 'right' : 'left');
 
     /* 과학실: 조마다 성별을 하나로 통일하고, 조 순서를 섞는다 */
     let blockGenders = [];
@@ -896,7 +911,7 @@ function buildPlan(layout, malesIn, femalesIn, slotHint) {
                 want = (r % 2 === 0) ? startGender : (startGender === 'male' ? 'female' : 'male');
             }
             for (let c = 0; c < cols; c++) {
-                const seat = newSeat(r, c, blockRow * rows + r, faceInGroup(c, cols));
+                const seat = newSeat(r, c, blockRow * rows + r, sideOf(c, cols));
                 // 원하는 성별이 동나면 남은 학생으로 채운다 (아무도 빠뜨리지 않게).
                 // 과학실은 '조마다 동성'이 원칙이라 섞지 않고 빈자리로 남긴다.
                 let g = want;
@@ -1380,16 +1395,14 @@ const LS_FACING = 'classroom_seats_facing';
 function onFacingToggle() {
     const on = $('faceEachOther').checked;
     localStorage.setItem(LS_FACING, on ? '1' : '0');
-
-    const L = $('layoutSelect').value;
-    if (L !== 'science' && L !== '2x2') { toast('4인 모둠과 과학실에만 걸리는 설정이에요.'); return; }
     if (!currentPlan) return;
 
     // 자리는 그대로 두고 책상 방향만 돌린다
     currentPlan.containers.forEach(cont => cont.seats.forEach(seat => {
-        seat.face = on ? (seat.c < cont.cols / 2 ? 'right' : 'left') : 'up';
+        seat.face = on ? (seat.sideFace || 'up') : 'up';
     }));
     renderPlan(currentPlan);
+    toast(on ? '책상을 세로로 돌렸어요 🔄' : '책상을 앞으로 되돌렸어요');
 }
 
 function setSeatFont(v, syncSlider) {
