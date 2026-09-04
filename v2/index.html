@@ -106,7 +106,7 @@ label.cap{ font-size:.78rem; color:#a3937f; display:block; margin-bottom:.25rem;
 
 .desk{
   position:relative; flex:1 1 auto; min-width:0; min-height:0;
-  display:flex; align-items:center; justify-content:center;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:.2rem;
   background:var(--deskBg); border:3px solid var(--deskEdge); border-radius:14px;
   box-shadow:0 5px 0 -1px #e8dcc8;
   padding:.7rem .35rem .5rem;
@@ -132,7 +132,13 @@ label.cap{ font-size:.78rem; color:#a3937f; display:block; margin-bottom:.25rem;
 /* 세로로 돌린 책상은 폭이 좁고 깊이가 길다 — 실제 책상을 90도 돌린 모양.
    마주보는 짝끼리 맞붙도록 책상을 안쪽 모서리에 붙인다. */
 .seat-box.face-left, .seat-box.face-right{ min-height:calc(var(--seat-min-h) * 1.5); justify-content:flex-start; }
-.face-left > .desk, .face-right > .desk{ aspect-ratio:3/4; flex:0 0 auto; max-width:100%; }
+.face-left > .desk, .face-right > .desk{
+  aspect-ratio:3/4; flex:0 0 auto;
+  width:auto; min-width:0; max-width:100%;   /* 내용(빈자리 안내 등)이 폭을 늘리지 못하게 */
+}
+/* 좁은 세로 책상에서는 빈자리 안내를 더 작게 */
+.face-left .empty-label, .face-right .empty-label{ font-size:.72rem; }
+.face-left .add-btn, .face-right .add-btn{ padding:.15rem .45rem; font-size:.68rem; }
 /* 등받이 — 책상에서 먼 쪽 */
 .chair::after{ content:''; position:absolute; background:rgba(90,70,40,.22); border-radius:999px; }
 .face-up    > .chair::after{ left:12%; right:12%; bottom:-1px; height:3px; }
@@ -971,11 +977,16 @@ function paintSeat(el) {
         el.style.removeProperty('--deskBg');
     }
 
+    const shown = s.name ? (stripNum(s.name) || s.name) : '';   // 배치도에는 번호를 뺀 이름만
+    // 긴 이름은 글자를 줄여 담는다 — 한 자리가 커지면 모든 자리가 따라 커지므로
+    const len   = [...shown].length;
+    const scale = len <= 5 ? 1 : len <= 8 ? .82 : len <= 12 ? .66 : .5;
+
     const inside = s.name
         ? `<span class="seat-tag">${escapeHtml(s.tag)}</span>
            <button class="desk-btn delete-btn no-print" title="결석 처리">✕</button>
            <button class="desk-btn rotate-btn no-print" title="책상 90도 돌리기">⟳</button>
-           <span class="seat-name">${escapeHtml(s.name)}</span>`
+           <span class="seat-name"${scale < 1 ? ` style="font-size:calc(var(--seat-font) * ${scale})"` : ''}>${escapeHtml(shown)}</span>`
         : `<button class="desk-btn rotate-btn no-print" title="책상 90도 돌리기">⟳</button>
            <span class="empty-label">빈자리</span>
            <button class="add-btn no-print">+ 학생</button>`;
@@ -993,7 +1004,9 @@ function renderPlan(plan) {
     grid.style.gap = plan.gap;
 
     plan.containers.forEach(cont => {
-        const gridCss = `display:grid;grid-template-columns:repeat(${cont.cols},1fr);gap:${cont.gap};`;
+        // grid-auto-rows:1fr — 학생이 앉은 줄과 빈 줄의 높이를 똑같이 맞춘다
+        const gridCss = `display:grid;grid-template-columns:repeat(${cont.cols},1fr);`
+                      + `grid-auto-rows:1fr;gap:${cont.gap};`;
         let host, mounted;
 
         if (cont.kind === 'column') {
@@ -1032,6 +1045,19 @@ function renderPlan(plan) {
 
     const stamp = plan.savedAt ? ` · 저장된 배치 (${plan.savedAt.slice(0, 10)})` : '';
     $('planFooter').textContent = LAYOUT_NOTE[plan.layout] + stamp;
+
+    equalizeSeats();
+}
+
+/* 자리마다 이름 길이·조 구성이 달라 높이가 제각각이 된다.
+   격자 안에서는 grid-auto-rows 로 맞춰지지만 조(블록)를 넘어서는 못 맞추므로,
+   그린 뒤 가장 높은 자리에 전부 맞춘다. */
+function equalizeSeats() {
+    const boxes = [...document.querySelectorAll('#seatingGrid .seat-box')];
+    if (!boxes.length) return;
+    boxes.forEach(b => { b.style.height = ''; });
+    const h = Math.ceil(Math.max(...boxes.map(b => b.getBoundingClientRect().height)));
+    if (h > 0) boxes.forEach(b => { b.style.height = h + 'px'; });
 }
 
 const LAYOUT_NOTE = {
@@ -1101,11 +1127,12 @@ document.addEventListener('click', e => {
     if (rotBtn) {
         el._seat.face = nextFace(el._seat.face || 'up');
         paintSeat(el);
+        equalizeSeats();
         return;
     }
 
     if (delBtn) {
-        if (!confirm(`${el._seat.name} 학생을 결석 처리하고 자리를 비울까요?`)) return;
+        if (!confirm(`${stripNum(el._seat.name) || el._seat.name} 학생을 결석 처리하고 자리를 비울까요?`)) return;
         el._seat.name = '';
         el._seat.gender = '';
         paintSeat(el);
@@ -1411,6 +1438,7 @@ function setSeatFont(v, syncSlider) {
     document.documentElement.style.setProperty('--seat-min-h', Math.round(58 + n * 26) + 'px');
     $('fontVal').textContent = n.toFixed(2);
     if (syncSlider) $('fontRange').value = n;
+    equalizeSeats();
 }
 
 let fontBeforeBoard = null;
@@ -1446,6 +1474,8 @@ window.addEventListener('load', () => {
 
     setSeatFont($('fontRange').value);
     $('faceEachOther').checked = localStorage.getItem(LS_FACING) !== '0';
+    addEventListener('resize', equalizeSeats);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(equalizeSeats);
     renderRules();
     changeClass();
 });
