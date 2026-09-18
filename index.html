@@ -603,7 +603,8 @@ function renderMixedGrid(males, females) {
 
     grid.innerHTML = '';
     grid.style.gridTemplateColumns = `repeat(${mainCols}, 1fr)`;
-    grid.style.gap = '1.5rem';
+    // 과학실은 조가 많아 세로로 길어지므로 조 사이 간격을 좁힌다 (TV 화면 한 눈에 보기)
+    grid.style.gap = (layoutValue === 'science') ? '0.75rem' : '1.5rem';
 
     if (layoutValue === 'science') {
         const seatsPerGroup   = cols * rows;
@@ -618,7 +619,7 @@ function renderMixedGrid(males, females) {
             const block = document.createElement('div');
             block.style.display = 'grid';
             block.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
-            block.className = 'border border-slate-300 p-1.5 gap-1.5 bg-slate-50/30 rounded-lg shadow-sm h-fit mb-2 overflow-hidden';
+            block.className = 'border border-slate-300 p-1 gap-1 bg-slate-50/30 rounded-lg shadow-sm h-fit mb-0 overflow-hidden';
             let cg = groupGenders[groupIndex] || 'male';
             if (cg === 'male'   && males.length   === 0) cg = 'female';
             if (cg === 'female' && females.length === 0) cg = 'male';
@@ -628,6 +629,9 @@ function renderMixedGrid(males, females) {
                     const seat = document.createElement('div');
                     seat.className = `seat-box group rounded-md shadow-sm`;
                     seat.dataset.layout = 'normal';
+                    // 과학실만 좌석 세로 길이를 줄여 전체 배치도가 화면에 한 번에 들어오게 함
+                    seat.style.minHeight = '58px';
+                    seat.style.padding   = '0.25rem 0.2rem';
 
                     let name = "", gender = "";
                     if (cg === 'male'   && males.length   > 0) { name = males.shift();   gender = 'male'; }
