@@ -136,6 +136,10 @@ label.cap{ font-size:.78rem; color:#a3937f; display:block; margin-bottom:.25rem;
   aspect-ratio:3/4; flex:0 0 auto;
   width:auto; min-width:0; max-width:100%;   /* 내용(빈자리 안내 등)이 폭을 늘리지 못하게 */
 }
+/* 낮춘 자리(과학실 등)는 세로모드에서도 책상이 3/4 비율로 커지지 않게 —
+   조가 많아 세로로 길어지는 배치도를 화면 안에 담기 위해 */
+.seat-box.compact.face-left, .seat-box.compact.face-right{ min-height:0; }
+.compact.face-left > .desk, .compact.face-right > .desk{ aspect-ratio:auto; flex:1 1 auto; }
 /* 좁은 세로 책상에서는 빈자리 안내를 더 작게 */
 .face-left .empty-label, .face-right .empty-label{ font-size:.72rem; }
 .face-left .add-btn, .face-right .add-btn{ padding:.15rem .45rem; font-size:.68rem; }
@@ -928,11 +932,18 @@ function buildPlan(layout, malesIn, femalesIn, slotHint) {
                 seats.push(seat);
             }
         }
-        containers.push({ cols, rows, kind:'block', gap:'.5rem', seats });
+        // 과학실은 조가 많아 세로로 길어진다. 책상을 낮추고 여백을 좁혀
+        // 배치도 전체가 교실 TV 화면에 한 번에 들어오게 한다.
+        const sci = layout === 'science';
+        containers.push({ cols, rows, kind:'block',
+                          gap: sci ? '.35rem' : '.5rem',
+                          pad: sci ? '.35rem' : '.5rem',
+                          compact: sci ? .66 : false, seats });
     }
 
     // 조가 적으면 화면 폭을 다 쓰도록 열 수를 줄인다 (교실 화면에서 특히)
-    return { layout, mainCols: Math.min(mainCols, containers.length), gap:'1.4rem', containers };
+    return { layout, mainCols: Math.min(mainCols, containers.length),
+             gap: (layout === 'science') ? '.7rem' : '1.4rem', containers };
 }
 
 /** plan 의 모든 자리를 화면 순서대로 펼친 배열 */
@@ -959,6 +970,7 @@ function paintSeat(el) {
     const s   = el._seat;
     const cls = ['seat-box', `face-${s.face || 'up'}`];
 
+    if (el.dataset.compact) cls.push('compact');
     if (!s.name) cls.push('empty');
     else {
         cls.push(s.gender === 'female' ? 'female' : 'male', 'draggable');
@@ -1024,7 +1036,7 @@ function renderPlan(plan) {
         } else if (cont.kind === 'block') {
             host = mounted = document.createElement('div');
             host.style.cssText = gridCss
-                + 'padding:.5rem;border:3px solid #efe6d5;border-radius:20px;background:#fffdf8;height:fit-content;';
+                + `padding:${cont.pad || '.5rem'};border:3px solid #efe6d5;border-radius:20px;background:#fffdf8;height:fit-content;`;
         } else {
             host = mounted = document.createElement('div');
             host.style.cssText = gridCss;
@@ -1044,7 +1056,10 @@ function renderPlan(plan) {
         cont.seats.forEach(seat => {
             const el = document.createElement('div');
             el._seat = seat;
-            if (cont.compact) el.style.minHeight = 'calc(var(--seat-min-h) * .78)';
+            // compact 는 true(=.78) 또는 직접 정한 비율. 자리 높이를 낮춘다.
+            const cf = cont.compact === true ? .78 : (cont.compact || 0);
+            if (cf) { el.style.minHeight = `calc(var(--seat-min-h) * ${cf})`; el.dataset.compact = '1'; }
+            else delete el.dataset.compact;
             if (cont.placed)  el.style.gridArea  = `${seat.r + 1} / ${seat.c + 1}`;
             paintSeat(el);
             host.appendChild(el);
