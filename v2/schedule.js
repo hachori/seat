@@ -30,12 +30,16 @@
         return h * 60 + m;
     };
 
+    function periodTimes(period, grade) {
+        const times = period === 4 && grade <= 3 ? ['12:00', '12:40'] : PERIODS[period - 1];
+        return times ? { start: times[0], end: times[1] } : null;
+    }
+
     function lessonsForDay(weekday) {
         return (WEEK[weekday] || []).flatMap((room, index) => {
             if (!room) return [];
             const grade = Number(room.split('-')[0]);
-            const [start, end] = index === 3 && grade <= 3
-                ? ['12:00', '12:40'] : PERIODS[index];
+            const { start, end } = periodTimes(index + 1, grade);
             return [{
                 classId: `${room}-${grade <= 4 ? '영어' : '과학'}`,
                 period: index + 1, start, end,
@@ -59,5 +63,5 @@
         };
     }
 
-    return { at, lessonsForDay };
+    return { at, lessonsForDay, periodTimes };
 });

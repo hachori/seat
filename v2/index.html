@@ -9,7 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Jua&family=Gaegu:wght@400;700&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
-<script src="./schedule.js"></script>
+<script src="./schedule.js?v=20261027-dialogs"></script>
 <style>
 :root{
   --seat-font: 1.15rem;
@@ -263,6 +263,57 @@ body.board-mode .desk-btn, body.board-mode .add-btn{ display:none; }
 .rule-front   { border-color:#c3b6ea; color:#7358b8; }
 .rule-chip button{ border:none; background:transparent; cursor:pointer; color:inherit; opacity:.55; font-size:.9rem; line-height:1; }
 .rule-chip button:hover{ opacity:1; }
+
+/* ── 시간표 · 시정표 ───────────────────────── */
+.header-actions{ display:flex; align-items:center; gap:8px; margin-left:auto; }
+.schedule-icon{
+  width:42px; height:42px; flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center;
+  border:2px solid #e3e9dd; border-radius:14px; background:#f0f8f2; color:var(--board); cursor:pointer;
+}
+.schedule-icon:hover{ background:#deefe3; border-color:#a9cdb4; }
+.schedule-icon:focus-visible, .schedule-close:focus-visible{ outline:3px solid var(--accent); outline-offset:3px; }
+.schedule-icon svg{ width:22px; height:22px; }
+body.schedule-dialog-open{ overflow:hidden; }
+.schedule-dialog{
+  width:min(880px, calc(100vw - 24px)); max-width:none; max-height:88vh; max-height:88dvh;
+  margin:auto; padding:0; border:2px solid #e8dcc8; border-radius:24px;
+  background:#fffdf8; color:var(--ink); box-shadow:0 24px 80px #40332540; overflow:auto;
+}
+.schedule-dialog::backdrop{ background:rgba(52,45,37,.45); }
+.schedule-dialog-header{
+  position:sticky; top:0; z-index:1; display:flex; align-items:center; justify-content:space-between;
+  gap:16px; padding:20px 24px; border-bottom:2px solid #ece2d2; background:#fffdf8;
+}
+.schedule-dialog-header h2{ font-size:1.5rem; margin:0; }
+.schedule-dialog-header p{ margin:5px 0 0; font-size:.85rem; color:#8e806e; }
+.schedule-close{
+  display:flex; align-items:center; justify-content:center; width:42px; height:42px;
+  border:0; border-radius:50%; background:#f2ece0; color:#6b5c4d; font-size:1.4rem; cursor:pointer;
+}
+.schedule-dialog-content{ padding:20px 24px 24px; }
+.schedule-table-scroll{ overflow-x:auto; border:2px solid #e8e1d4; border-radius:16px; }
+.schedule-table{ width:100%; min-width:460px; border-collapse:collapse; text-align:center; font-size:1rem; }
+.schedule-table th, .schedule-table td{ padding:9px 10px; border-right:1px solid #e8e1d4; border-bottom:1px solid #e8e1d4; }
+.schedule-table tr > :last-child{ border-right:0; }
+.schedule-table tbody tr:last-child > *{ border-bottom:0; }
+.schedule-table thead th{ background:#eef3e9; color:#4e6d50; font-weight:400; }
+.schedule-table tbody th{ background:#f7f3eb; font-weight:400; white-space:nowrap; }
+.schedule-table td{ background:#fff; }
+.schedule-table td.schedule-english{ background:#f1f9f3; color:#3f7750; }
+.schedule-table td.schedule-science{ background:#f6f1fc; color:#8662a1; }
+.schedule-table small{ display:block; margin-top:4px; font-size:.75rem; opacity:.75; }
+.schedule-table .schedule-today{ background:#d8ecdf; color:#2f6c42; }
+.schedule-table td[aria-current="time"]{ box-shadow:inset 0 0 0 3px var(--accent); }
+.schedule-table .bell-special{ background:#fffae8; }
+.schedule-note{ margin:14px 0 0; color:#8e806e; font-size:.83rem; line-height:1.6; }
+.bell-time{ white-space:nowrap; }
+.bell-table tbody th small{ display:inline; margin-left:6px; white-space:nowrap; }
+@media (max-width:480px){
+  .schedule-dialog-header{ padding:16px; }
+  .schedule-dialog-content{ padding:16px; }
+  .schedule-table{ font-size:.9rem; }
+  .schedule-icon{ width:40px; height:40px; }
+}
 </style>
 </head>
 <body class="p-3 md:p-6">
@@ -272,11 +323,19 @@ body.board-mode .desk-btn, body.board-mode .add-btn{ display:none; }
 <!-- ════════ 설정 패널 ════════ -->
 <div id="settingsPanel" class="panel max-w-5xl mx-auto p-5 md:p-6 mb-7 no-print no-board">
 
-  <div class="flex items-center justify-between gap-3 mb-4">
+  <div class="flex items-center justify-between flex-wrap gap-3 mb-4">
     <h1 class="text-2xl md:text-3xl flex items-center gap-2">
       <span class="bg-[#eaf6ee] rounded-2xl px-2 py-1">🪑</span> 자리 배치
     </h1>
-    <span id="connectionBadge" class="text-xs px-3 py-1.5 rounded-full bg-[#f2ece0] text-[#a3937f]">⏳ 연결 확인 중</span>
+    <div class="header-actions">
+      <button type="button" class="schedule-icon" title="시간표 보기" aria-label="시간표 보기" aria-haspopup="dialog" aria-controls="scheduleDialog" onclick="openScheduleDialog('timetable')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4m10-4v4M3 10h18M8 14h1m6 0h1m-8 4h1m6 0h1"/></svg>
+      </button>
+      <button type="button" class="schedule-icon" title="시정표 보기" aria-label="시정표 보기" aria-haspopup="dialog" aria-controls="scheduleDialog" onclick="openScheduleDialog('bell')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+      </button>
+      <span id="connectionBadge" class="text-xs px-3 py-1.5 rounded-full bg-[#f2ece0] text-[#a3937f]">⏳ 연결 확인 중</span>
+    </div>
   </div>
 
   <div class="rounded-2xl border-2 border-[#d6eadc] bg-[#f0f8f2] px-4 py-3 mb-4">
@@ -412,6 +471,18 @@ body.board-mode .desk-btn, body.board-mode .add-btn{ display:none; }
 </div>
 
 <div id="toast"></div>
+
+<dialog id="scheduleDialog" class="schedule-dialog no-print" aria-labelledby="scheduleDialogTitle" aria-describedby="scheduleDialogSubtitle"
+        onclick="closeScheduleDialogOutside(event)" onclose="document.body.classList.remove('schedule-dialog-open')">
+  <div class="schedule-dialog-header">
+    <div>
+      <h2 id="scheduleDialogTitle"></h2>
+      <p id="scheduleDialogSubtitle"></p>
+    </div>
+    <form method="dialog"><button class="schedule-close" aria-label="닫기" title="닫기" autofocus>×</button></form>
+  </div>
+  <div id="scheduleDialogContent" class="schedule-dialog-content"></div>
+</dialog>
 
 <script>
 /* ══════════════════════════════════════════════
@@ -1356,6 +1427,61 @@ function automaticLayoutForClass(cls) {
     return null;
 }
 
+function timetableMarkup() {
+    const state = ClassSchedule.at();
+    const days = ['월', '화', '수', '목', '금'];
+    const week = days.map((_, index) => ClassSchedule.lessonsForDay(index + 1));
+    const headers = days.map((day, index) => `<th scope="col"${state.weekday === index + 1 ? ' class="schedule-today"' : ''}>${day}${state.weekday === index + 1 ? '<small>오늘</small>' : ''}</th>`).join('');
+    const rows = Array.from({ length: 6 }, (_, index) => {
+        const period = index + 1;
+        const cells = week.map((lessons, day) => {
+            const lesson = lessons.find(item => item.period === period);
+            if (!lesson) return '<td><span aria-label="수업 없음">—</span></td>';
+            const [grade, room, subject] = lesson.classId.split('-');
+            const current = state.weekday === day + 1 && state.current?.period === period;
+            return `<td class="schedule-${subject === '영어' ? 'english' : 'science'}"${current ? ' aria-current="time"' : ''}>${grade}-${room}<small>${subject}</small></td>`;
+        }).join('');
+        return `<tr><th scope="row">${period}교시</th>${cells}</tr>`;
+    }).join('');
+    return `<div class="schedule-table-scroll" role="region" aria-label="주간 시간표. 좁은 화면에서는 좌우로 스크롤하세요." tabindex="0"><table class="schedule-table" aria-label="김희철 주간 수업 시간표"><thead><tr><th scope="col">교시</th>${headers}</tr></thead><tbody>${rows}</tbody></table></div>
+        <p class="schedule-note">매주 19차시 · 3~4학년 영어 / 5~6학년 과학<br>3학년 4교시는 12:00, 4~6학년 4교시는 11:20에 시작해요. 자세한 시간은 시정표에서 확인할 수 있어요.</p>`;
+}
+
+function bellScheduleMarkup() {
+    const time = (period, grade) => {
+        const { start, end } = ClassSchedule.periodTimes(period, grade);
+        return `<span class="bell-time">${start}~${end}</span>`;
+    };
+    const commonPeriod = period => `<tr><th scope="row">${period}교시<small>40분</small></th><td colspan="2">${time(period, 4)}</td></tr>`;
+    return `<div class="schedule-table-scroll" role="region" aria-label="학년별 시정표. 좁은 화면에서는 좌우로 스크롤하세요." tabindex="0"><table class="schedule-table bell-table" aria-label="학교 시정표">
+        <thead><tr><th scope="col">구분</th><th scope="col">1~3학년</th><th scope="col">4~6학년</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">자율활동</th><td colspan="2">~08:30<small>1인 1역 활동, 운동장 걷기</small></td></tr>
+          <tr><th scope="row">놀이시간<small>20분</small></th><td colspan="2"><span class="bell-time">08:30~08:50</span></td></tr>
+          ${[1, 2, 3].map(commonPeriod).join('')}
+          <tr><th scope="row">점심 / 4교시</th><td>점심 <span class="bell-time">11:10~11:40</span><small>놀이 11:40~12:00</small></td><td class="bell-special">4교시 ${time(4, 4)}</td></tr>
+          <tr><th scope="row">4교시 / 점심</th><td class="bell-special">4교시 ${time(4, 3)}</td><td>점심 <span class="bell-time">12:00~12:30</span><small>놀이 12:30~12:50</small></td></tr>
+          ${[5, 6].map(commonPeriod).join('')}
+        </tbody></table></div>
+        <p class="schedule-note">4교시와 점심시간은 학년에 따라 달라요. 수업 시간은 한국 시간을 기준으로 표시해요.</p>`;
+}
+
+function openScheduleDialog(kind) {
+    const timetable = kind === 'timetable';
+    $('scheduleDialogTitle').textContent = timetable ? '📅 시간표' : '🕒 시정표';
+    $('scheduleDialogSubtitle').textContent = timetable ? '김희철 · 3~4학년 영어, 5~6학년 과학' : '수업 · 점심 · 놀이 시간 안내';
+    $('scheduleDialogContent').innerHTML = timetable ? timetableMarkup() : bellScheduleMarkup();
+    $('scheduleDialog').showModal();
+    document.body.classList.add('schedule-dialog-open');
+}
+
+function closeScheduleDialogOutside(event) {
+    if (event.target !== event.currentTarget) return;
+    const dialog = event.currentTarget;
+    const rect = dialog.getBoundingClientRect();
+    if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) dialog.close();
+}
+
 function syncClassWithSchedule(initial = false) {
     if (!scheduleStarted) return;
     const state = ClassSchedule.at();
@@ -1381,7 +1507,7 @@ function syncClassWithSchedule(initial = false) {
 
 function setClassLoading(loading) {
     classLoading = loading;
-    document.querySelectorAll('#settingsPanel input, #settingsPanel textarea, #settingsPanel select:not(#classSelect), #settingsPanel button:not(#resumeAutoClassBtn)')
+    document.querySelectorAll('#settingsPanel input, #settingsPanel textarea, #settingsPanel select:not(#classSelect), #settingsPanel button:not(#resumeAutoClassBtn):not(.schedule-icon)')
         .forEach(control => { control.disabled = loading; });
     $('saveBtn').disabled = loading || savingList;
     $('savePlanBtn').disabled = loading || savingPlan;
