@@ -19,6 +19,7 @@ function app({ online = false, now = '2026-10-27T11:39:00+09:00' } = {}) {
     const element = id => elements[id] ||= {
         value: '', textContent: '', innerHTML: '', disabled: false, hidden: false,
         style: {}, classList: { add() {}, remove() {} }, addEventListener() {},
+        close() { this.closed = true; }, focus() {},
     };
     element('classSelect').value = '3-3-영어';
     element('classSelect').options = [...html.match(/<select id="classSelect"[\s\S]*?<\/select>/)[0].matchAll(/<option value="([^"]+)"/g)].map(m => ({ value: m[1] }));
@@ -32,7 +33,7 @@ function app({ online = false, now = '2026-10-27T11:39:00+09:00' } = {}) {
     firestore.FieldValue = { serverTimestamp: () => 'server-time' };
     const context = vm.createContext({
         console, setTimeout, clearTimeout,
-        ClassSchedule: { at: () => schedule.at(new Date(now)) },
+        ClassSchedule: { ...schedule, at: () => schedule.at(new Date(now)) },
         firebase: { initializeApp() {}, firestore },
         document: {
             hidden: false, getElementById: element,
@@ -249,4 +250,36 @@ test('지그재그 정원을 넘으면 저장 모양 안내보다 미배치 학�
     a.context.syncClassWithSchedule(true);
     assert.equal(a.get('currentPlan.layout'), 'zigzag');
     assert.match(a.messages.at(-1), /1명이 앉지 못했어요/);
+});
+
+test('시간표의 반을 누르면 팝업을 닫고 명단과 과목별 모양을 함께 선택한다', async () => {
+    const a = app();
+    a.context.syncClassWithSchedule(true);
+    for (const [cls, layout, student] of [
+        ['3-4-영어', 'zigzag', '1 영어학생'],
+        ['5-2-과학', 'science', '1 과학학생'],
+    ]) {
+        a.storage.set(`classroom_seats_class_${cls}`, student);
+        a.storage.set(`classroom_seats_plan_${cls}`, JSON.stringify({ layout: 'free', seats: [{ n: '1 이전배치', g: 'female', f: 'up' }] }));
+        a.element('scheduleDialog').closed = false;
+        await a.context.selectTimetableClass(cls);
+        assert.equal(a.element('scheduleDialog').closed, true);
+        assert.equal(a.get('loadedClass'), cls);
+        assert.equal(a.element('layoutSelect').value, layout);
+        assert.equal(a.get('currentPlan.layout'), layout);
+        assert.equal(a.get('flatSeats(currentPlan).find(s => s.name).name'), student);
+        assert.equal(a.get('autoClassEnabled'), false);
+        a.tick('2026-10-28T08:50:00+09:00');
+        assert.equal(a.element('classSelect').value, cls);
+        assert.equal(a.writes.length, 0);
+    }
+});
+
+test('시간표에 표시되는 4교시 시정은 반의 학년을 따른다', () => {
+    const markup = app().context.timetableMarkup();
+    assert.match(markup, /목요일 4교시 3학년 3반 영어, 12:00~12:40, 명단 열기/);
+    assert.match(markup, /수요일 4교시 4학년 1반 영어, 11:20~12:00, 명단 열기/);
+    assert.match(markup, /월요일 4교시 6학년 1반 과학, 11:20~12:00, 명단 열기/);
+    assert.match(markup, /schedule-lesson-time">12:00~12:40/);
+    assert.match(markup, /schedule-lesson-time">11:20~12:00/);
 });

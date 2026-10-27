@@ -305,6 +305,17 @@ body.schedule-dialog-open{ overflow:hidden; }
 .schedule-table .schedule-today{ background:#d8ecdf; color:#2f6c42; }
 .schedule-table td[aria-current="time"]{ box-shadow:inset 0 0 0 3px var(--accent); }
 .schedule-table .bell-special{ background:#fffae8; }
+.timetable-table{ min-width:600px; }
+.schedule-table td.schedule-lesson-cell{ padding:0; }
+.schedule-lesson{
+  width:100%; min-height:74px; padding:8px 6px; border:0; background:transparent;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+  font:inherit; color:inherit; line-height:1.2; cursor:pointer;
+}
+.schedule-lesson:hover{ background:rgba(63,107,74,.09); }
+.schedule-lesson:focus-visible{ outline:3px solid var(--accent); outline-offset:-4px; border-radius:8px; }
+.schedule-lesson-subject{ font-size:.75rem; opacity:.8; }
+.schedule-lesson-time{ font-family:system-ui,sans-serif; font-size:.7rem; font-variant-numeric:tabular-nums; white-space:nowrap; opacity:.85; }
 .schedule-note{ margin:14px 0 0; color:#8e806e; font-size:.83rem; line-height:1.6; }
 .bell-time{ white-space:nowrap; }
 .bell-table tbody th small{ display:inline; margin-left:6px; white-space:nowrap; }
@@ -1427,6 +1438,17 @@ function automaticLayoutForClass(cls) {
     return null;
 }
 
+function selectTimetableClass(cls) {
+    const select = $('classSelect');
+    if (![...select.options].some(option => option.value === cls)) return;
+    select.value = cls;
+    // 시간표에서 직접 고른 반은 자동 갱신이 다른 반으로 되돌리지 않게 유지한다.
+    pauseAutoClass('manual');
+    $('scheduleDialog').close();
+    select.focus();
+    return changeClass({ preferredLayout: automaticLayoutForClass(cls) });
+}
+
 function timetableMarkup() {
     const state = ClassSchedule.at();
     const days = ['월', '화', '수', '목', '금'];
@@ -1439,12 +1461,17 @@ function timetableMarkup() {
             if (!lesson) return '<td><span aria-label="수업 없음">—</span></td>';
             const [grade, room, subject] = lesson.classId.split('-');
             const current = state.weekday === day + 1 && state.current?.period === period;
-            return `<td class="schedule-${subject === '영어' ? 'english' : 'science'}"${current ? ' aria-current="time"' : ''}>${grade}-${room}<small>${subject}</small></td>`;
+            return `<td class="schedule-lesson-cell schedule-${subject === '영어' ? 'english' : 'science'}"${current ? ' aria-current="time"' : ''}>
+                <button type="button" class="schedule-lesson" data-class-id="${escapeHtml(lesson.classId)}" onclick="selectTimetableClass(this.dataset.classId)"
+                        aria-label="${days[day]}요일 ${period}교시 ${grade}학년 ${room}반 ${subject}, ${lesson.start}~${lesson.end}, 명단 열기">
+                    <span>${grade}-${room}</span><span class="schedule-lesson-subject">${subject}</span>
+                    <span class="schedule-lesson-time">${lesson.start}~${lesson.end}</span>
+                </button></td>`;
         }).join('');
         return `<tr><th scope="row">${period}교시</th>${cells}</tr>`;
     }).join('');
-    return `<div class="schedule-table-scroll" role="region" aria-label="주간 시간표. 좁은 화면에서는 좌우로 스크롤하세요." tabindex="0"><table class="schedule-table" aria-label="김희철 주간 수업 시간표"><thead><tr><th scope="col">교시</th>${headers}</tr></thead><tbody>${rows}</tbody></table></div>
-        <p class="schedule-note">매주 19차시 · 3~4학년 영어 / 5~6학년 과학<br>3학년 4교시는 12:00, 4~6학년 4교시는 11:20에 시작해요. 자세한 시간은 시정표에서 확인할 수 있어요.</p>`;
+    return `<div class="schedule-table-scroll" role="region" aria-label="주간 시간표. 좁은 화면에서는 좌우로 스크롤하세요." tabindex="0"><table class="schedule-table timetable-table" aria-label="김희철 주간 수업 시간표"><thead><tr><th scope="col">교시</th>${headers}</tr></thead><tbody>${rows}</tbody></table></div>
+        <p class="schedule-note">매주 19차시 · 영어는 지그재그, 과학은 과학실로 열려요.<br>각 칸은 해당 반의 수업 시간이에요. 4교시는 3학년 12:00~12:40, 4~6학년 11:20~12:00입니다.</p>`;
 }
 
 function bellScheduleMarkup() {
@@ -1469,7 +1496,7 @@ function bellScheduleMarkup() {
 function openScheduleDialog(kind) {
     const timetable = kind === 'timetable';
     $('scheduleDialogTitle').textContent = timetable ? '📅 시간표' : '🕒 시정표';
-    $('scheduleDialogSubtitle').textContent = timetable ? '김희철 · 3~4학년 영어, 5~6학년 과학' : '수업 · 점심 · 놀이 시간 안내';
+    $('scheduleDialogSubtitle').textContent = timetable ? '김희철 · 반을 누르면 명단이 바로 열려요' : '수업 · 점심 · 놀이 시간 안내';
     $('scheduleDialogContent').innerHTML = timetable ? timetableMarkup() : bellScheduleMarkup();
     $('scheduleDialog').showModal();
     document.body.classList.add('schedule-dialog-open');
