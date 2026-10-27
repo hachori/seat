@@ -9,6 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Jua&family=Gaegu:wght@400;700&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<script src="./schedule.js"></script>
 <style>
 :root{
   --seat-font: 1.15rem;
@@ -269,7 +270,7 @@ body.board-mode .desk-btn, body.board-mode .add-btn{ display:none; }
 <button id="exitBoardBtn" class="btn btn-md btn-ink no-print" onclick="toggleBoardMode(false)">↩︎ 교실 모드 끄기</button>
 
 <!-- ════════ 설정 패널 ════════ -->
-<div class="panel max-w-5xl mx-auto p-5 md:p-6 mb-7 no-print no-board">
+<div id="settingsPanel" class="panel max-w-5xl mx-auto p-5 md:p-6 mb-7 no-print no-board">
 
   <div class="flex items-center justify-between gap-3 mb-4">
     <h1 class="text-2xl md:text-3xl flex items-center gap-2">
@@ -278,11 +279,21 @@ body.board-mode .desk-btn, body.board-mode .add-btn{ display:none; }
     <span id="connectionBadge" class="text-xs px-3 py-1.5 rounded-full bg-[#f2ece0] text-[#a3937f]">⏳ 연결 확인 중</span>
   </div>
 
+  <div class="rounded-2xl border-2 border-[#d6eadc] bg-[#f0f8f2] px-4 py-3 mb-4">
+    <div class="flex items-center justify-between gap-2 flex-wrap">
+      <span class="text-xs text-[#6a8b73]">🕒 시간표 자동 선택</span>
+      <span id="scheduleClock" class="text-xs text-[#6a8b73]"></span>
+    </div>
+    <p id="scheduleStatus" class="mt-1 text-lg text-[#3f6b4a]" role="status" aria-live="polite">시간표를 확인하는 중이에요…</p>
+    <p id="scheduleDetail" class="mt-1 text-xs leading-relaxed text-[#6a8b73]"></p>
+    <button id="resumeAutoClassBtn" class="btn btn-sm btn-green mt-2" onclick="resumeAutoClass()" hidden>자동 선택 다시 켜기</button>
+  </div>
+
   <!-- 반 + 레이아웃 -->
   <div class="grid md:grid-cols-2 gap-3 mb-3">
     <div>
       <label class="cap" for="classSelect">우리 반</label>
-      <select id="classSelect" class="field text-lg cursor-pointer" onchange="changeClass()">
+      <select id="classSelect" class="field text-lg cursor-pointer" onchange="onManualClassChange()">
         <option value="3-3-영어">3-3-영어</option>
         <option value="3-4-영어">3-4-영어</option>
         <option value="4-1-영어">4-1-영어</option>
@@ -325,12 +336,12 @@ body.board-mode .desk-btn, body.board-mode .add-btn{ display:none; }
       <div>
         <div class="roster-head male">👦 남학생 <span id="maleCount"></span></div>
         <textarea id="maleInput" class="field roster-box h-28 text-sm leading-relaxed"
-          oninput="updateCountHint()"></textarea>
+          oninput="pauseAutoClass('edit'); updateCountHint()"></textarea>
       </div>
       <div>
         <div class="roster-head female">👧 여학생 <span id="femaleCount"></span></div>
         <textarea id="femaleInput" class="field roster-box h-28 text-sm leading-relaxed"
-          oninput="updateCountHint()"></textarea>
+          oninput="pauseAutoClass('edit'); updateCountHint()"></textarea>
       </div>
     </div>
     <div id="rosterWarn" hidden class="mt-2 text-xs rounded-2xl border-2 border-[#f0dcae] bg-[#fffaef] px-3 py-2 text-[#a2803c] flex items-center justify-between gap-2 flex-wrap">
@@ -347,13 +358,13 @@ body.board-mode .desk-btn, body.board-mode .add-btn{ display:none; }
     <div class="px-4 pb-4 pt-1 border-t-2 border-[#f4ece0]">
       <div id="ruleList" class="flex flex-wrap gap-2 mb-3"></div>
       <div class="grid gap-2 sm:grid-cols-[1fr_auto_1fr_auto]">
-        <select id="ruleA" class="field text-sm"></select>
-        <select id="ruleType" class="field text-sm sm:w-auto" onchange="onRuleTypeChange()">
+        <select id="ruleA" class="field text-sm" onchange="pauseAutoClass('edit')"></select>
+        <select id="ruleType" class="field text-sm sm:w-auto" onchange="pauseAutoClass('edit'); onRuleTypeChange()">
           <option value="apart">↔︎ 떼어놓기</option>
           <option value="together">🤝 붙여놓기</option>
           <option value="front">⬆︎ 맨 앞줄</option>
         </select>
-        <select id="ruleB" class="field text-sm"></select>
+        <select id="ruleB" class="field text-sm" onchange="pauseAutoClass('edit')"></select>
         <button class="btn btn-md btn-soft" onclick="addRule()">규칙 추가</button>
       </div>
       <p class="text-xs text-[#a3937f] mt-2 leading-relaxed">
@@ -576,6 +587,7 @@ function checkRoster() {
 
 /** 칸에 맞게 번호를 다시 매긴다 (이미 맞는 번호는 그대로 둔다) */
 function fixNumbers() {
+    pauseAutoClass('edit');
     const groups = [
         { id:'maleInput',   ...numRange('male')   },
         { id:'femaleInput', ...numRange('female') },
@@ -667,12 +679,14 @@ function addRule() {
         ((r.a === rule.a && r.b === rule.b) || (r.a === rule.b && r.b === rule.a))
     );
     if (dup) return toast('이미 있는 규칙이에요.');
+    pauseAutoClass('edit');
     currentRules.push(rule);
     renderRules();
     toast('규칙을 넣었어요. [자리 섞기]를 누르면 반영됩니다.');
 }
 
 function removeRule(idx) {
+    pauseAutoClass('edit');
     currentRules.splice(idx, 1);
     renderRules();
 }
@@ -1101,6 +1115,7 @@ const LAYOUT_NOTE = {
 const MAX_TRIES = 300;
 
 function shuffleAndRender(isShuffle = true) {
+    if (isShuffle) pauseAutoClass('edit');
     const { males, females } = splitByGender();
     const layout = $('layoutSelect').value;
 
@@ -1150,6 +1165,7 @@ document.addEventListener('click', e => {
     e.stopPropagation();
 
     if (rotBtn) {
+        pauseAutoClass('edit');
         el._seat.face = nextFace(el._seat.face || 'up');
         paintSeat(el);
         equalizeSeats();
@@ -1158,6 +1174,7 @@ document.addEventListener('click', e => {
 
     if (delBtn) {
         if (!confirm(`${stripNum(el._seat.name) || el._seat.name} 학생을 결석 처리하고 자리를 비울까요?`)) return;
+        pauseAutoClass('edit');
         el._seat.name = '';
         el._seat.gender = '';
         paintSeat(el);
@@ -1168,6 +1185,7 @@ document.addEventListener('click', e => {
         + `${gradeOf(currentClass())}학년은 번호로 성별을 정합니다 — `
         + `남학생 ${numRange('male').label} / 여학생 ${numRange('female').label}.`);
     if (!info || !info.trim()) return;
+    pauseAutoClass('edit');
     el._seat.name   = info.trim();
     el._seat.gender = genderOf(info);
     syncTag(el._seat, currentPlan && currentPlan.layout);
@@ -1206,6 +1224,7 @@ function onPointerDown(e) {
 
 function startDrag(x, y) {
     if (!pending) return;
+    pauseAutoClass('edit');
     const el = pending.el;
     clearTimeout(pending.timer);
 
@@ -1282,7 +1301,83 @@ document.addEventListener('contextmenu', e => { if (drag || pending?.touch) e.pr
    ══════════════════════════════════════════════ */
 function currentClass() { return $('classSelect').value; }
 
-function planDocId() { return currentClass() + PLAN_SUFFIX; }
+/* 시간표 자동 전환과 수동 편집이 겹치지 않도록 선택·불러오기 상태를 관리한다. */
+const LS_LAST_CLASS = 'classroom_seats_last_class';
+let autoClassEnabled = true;
+let autoClassPauseReason = '';
+let scheduleStarted = false;
+let classLoadVersion = 0;
+let classLoading = false;
+let loadedClass = null;
+let savingList = false, savingPlan = false;
+
+function renderScheduleStatus(state = ClassSchedule.at()) {
+    $('scheduleClock').textContent = `${state.dateLabel} ${state.timeLabel} · 한국 시간`;
+    const lesson = state.current || state.next;
+    const lessonText = lesson
+        ? `${lesson.period}교시 · ${lesson.classId} · ${lesson.start}~${lesson.end}` : '';
+    if (!autoClassEnabled) {
+        $('scheduleStatus').textContent = `${autoClassPauseReason === 'edit' ? '편집 중' : '수동 선택'} · ${currentClass()}`;
+        $('scheduleDetail').textContent = '자동 전환을 잠시 멈췄어요. '
+            + (lesson ? `${state.current ? '현재 수업' : '다음 수업'}: ${lessonText}` : '지금은 예정된 수업이 없어요.');
+    } else if (state.current) {
+        $('scheduleStatus').textContent = `지금은 ${state.current.period}교시 · ${state.current.classId}`;
+        $('scheduleDetail').textContent = `${state.current.start}~${state.current.end} 수업 · 시간표에 맞춰 반을 자동으로 선택해요.`;
+    } else if (state.next) {
+        $('scheduleStatus').textContent = `다음은 ${state.next.period}교시 · ${state.next.classId}`;
+        $('scheduleDetail').textContent = `지금은 수업 시간이 아니에요. ${state.next.start}~${state.next.end} 수업 명단을 미리 보여드려요.`;
+    } else {
+        $('scheduleStatus').textContent = state.lessons.length ? '오늘 수업을 모두 마쳤어요' : '오늘은 예정된 수업이 없어요';
+        $('scheduleDetail').textContent = `${currentClass()} 화면을 유지하고 있어요. 우리 반에서 다른 반을 직접 선택할 수 있어요.`;
+    }
+    $('resumeAutoClassBtn').hidden = autoClassEnabled;
+}
+
+function pauseAutoClass(reason = 'manual') {
+    autoClassEnabled = false;
+    autoClassPauseReason = reason;
+    renderScheduleStatus();
+}
+
+function onManualClassChange() {
+    pauseAutoClass('manual');
+    changeClass();
+}
+
+function resumeAutoClass() {
+    autoClassEnabled = true;
+    autoClassPauseReason = '';
+    syncClassWithSchedule();
+}
+
+function syncClassWithSchedule(initial = false) {
+    if (!scheduleStarted) return;
+    const state = ClassSchedule.at();
+    if (autoClassEnabled) {
+        const lesson = state.current || state.next;
+        let target = lesson ? lesson.classId : currentClass();
+        if (initial && !lesson) {
+            const last = localStorage.getItem(LS_LAST_CLASS);
+            const available = [...$('classSelect').options].some(option => option.value === last);
+            target = available ? last : (state.lessons.at(-1)?.classId || target);
+        }
+        // 같은 반의 연속 수업은 다시 불러오거나 자리를 섞지 않는다.
+        if (initial || target !== currentClass()) {
+            $('classSelect').value = target;
+            changeClass();
+        }
+    }
+    renderScheduleStatus(state);
+}
+
+function setClassLoading(loading) {
+    classLoading = loading;
+    document.querySelectorAll('#settingsPanel input, #settingsPanel textarea, #settingsPanel select:not(#classSelect), #settingsPanel button:not(#resumeAutoClassBtn)')
+        .forEach(control => { control.disabled = loading; });
+    $('saveBtn').disabled = loading || savingList;
+    $('savePlanBtn').disabled = loading || savingPlan;
+    $('loadPlanBtn').disabled = loading || !savedPlanRaw;
+}
 
 async function writeDoc(docId, patch) {
     if (!db) throw new Error('오프라인');
@@ -1293,29 +1388,39 @@ async function writeDoc(docId, patch) {
 }
 
 async function saveCurrentList() {
+    if (classLoading || loadedClass !== currentClass() || savingList) return;
     const cls  = currentClass();
     const list = joinBoxes();
+    const rules = currentRules.map(rule => ({ ...rule }));
     const btn  = $('saveBtn');
 
     localStorage.setItem(LS_LIST + cls, list);
-    localStorage.setItem(LS_RULES + cls, JSON.stringify(currentRules));
+    localStorage.setItem(LS_RULES + cls, JSON.stringify(rules));
 
+    savingList = true;
     btn.disabled = true;
     updateBadge('saving');
     try {
-        await writeDoc(currentClass(), { studentList: list });
-        await writeDoc(planDocId(),   { rules: currentRules });
-        updateBadge('cloud');
-        toast('명단과 규칙을 저장했어요 ✅');
+        await Promise.all([
+            writeDoc(cls, { studentList: list }),
+            writeDoc(cls + PLAN_SUFFIX, { rules }),
+        ]);
+        if (currentClass() === cls) {
+            updateBadge('cloud');
+            toast('명단과 규칙을 저장했어요 ✅');
+        }
     } catch (e) {
-        updateBadge('offline');
-        toast('이 기기에는 저장했지만 클라우드 저장은 실패했어요.', 4000);
+        if (currentClass() === cls) {
+            updateBadge('offline');
+            toast('이 기기에는 저장했지만 클라우드 저장은 실패했어요.', 4000);
+        }
     }
-    btn.disabled = false;
+    savingList = false;
+    btn.disabled = classLoading;
 }
 
 async function savePlan() {
-    if (!currentPlan) return;
+    if (!currentPlan || classLoading || loadedClass !== currentClass() || savingPlan) return;
     const cls  = currentClass();
     const data = {
         layout:  currentPlan.layout,
@@ -1327,17 +1432,23 @@ async function savePlan() {
     $('loadPlanBtn').disabled = false;
 
     const btn = $('savePlanBtn');
+    savingPlan = true;
     btn.disabled = true;
     updateBadge('saving');
     try {
-        await writeDoc(planDocId(), { savedPlan: data });
-        updateBadge('cloud');
-        toast(`${cls} 배치를 저장했어요. 다음 시간에 그대로 열립니다 💾`);
+        await writeDoc(cls + PLAN_SUFFIX, { savedPlan: data });
+        if (currentClass() === cls) {
+            updateBadge('cloud');
+            toast(`${cls} 배치를 저장했어요. 다음 시간에 그대로 열립니다 💾`);
+        }
     } catch (e) {
-        updateBadge('offline');
-        toast('이 기기에는 저장했지만 클라우드 저장은 실패했어요.', 4000);
+        if (currentClass() === cls) {
+            updateBadge('offline');
+            toast('이 기기에는 저장했지만 클라우드 저장은 실패했어요.', 4000);
+        }
     }
-    btn.disabled = false;
+    savingPlan = false;
+    btn.disabled = classLoading;
 }
 
 function applyPlan(raw) {
@@ -1388,6 +1499,7 @@ function applyPlan(raw) {
 }
 
 function loadPlan() {
+    pauseAutoClass('edit');
     if (!applyPlan(savedPlanRaw)) toast('저장된 배치가 없어요.');
 }
 
@@ -1396,6 +1508,18 @@ function loadPlan() {
    ══════════════════════════════════════════════ */
 async function changeClass() {
     const cls = currentClass();
+    const request = ++classLoadVersion;
+    const isCurrent = () => request === classLoadVersion && cls === currentClass();
+    loadedClass = null;
+    currentPlan = null;
+    savedPlanRaw = null;
+    currentRules = [];
+    setClassLoading(true);
+    $('seatingGrid').textContent = '명단을 불러오는 중이에요…';
+    $('planFooter').textContent = '';
+    $('countHint').textContent = '';
+    $('rosterWarn').hidden = true;
+    renderRules();
     $('chalkboardTitle').textContent = `${cls} 자리 배치도`;
 
     let list = null, rules = null, plan = null;
@@ -1408,6 +1532,7 @@ async function changeClass() {
                 db.collection(COLLECTION).doc(cls).get(),
                 db.collection(COLLECTION).doc(cls + PLAN_SUFFIX).get(),
             ]);
+            if (!isCurrent()) return;
             if (listSnap.exists) {
                 const d = listSnap.data();
                 if (typeof d.studentList === 'string') list = d.studentList;
@@ -1419,6 +1544,7 @@ async function changeClass() {
             }
             updateBadge('cloud');
         } catch (e) {
+            if (!isCurrent()) return;
             console.warn('클라우드 읽기 실패:', e.message);
             updateBadge('offline');
         }
@@ -1426,6 +1552,7 @@ async function changeClass() {
         updateBadge('offline');
     }
 
+    if (!isCurrent()) return;
     if (list  === null) list  = localStorage.getItem(LS_LIST + cls) || '';
     else localStorage.setItem(LS_LIST + cls, list);
 
@@ -1441,6 +1568,9 @@ async function changeClass() {
     $('loadPlanBtn').disabled = !savedPlanRaw;
 
     if (!applyPlan(savedPlanRaw)) shuffleAndRender(false);
+    loadedClass = cls;
+    localStorage.setItem(LS_LAST_CLASS, cls);
+    setClassLoading(false);
 }
 
 /* ══════════════════════════════════════════════
@@ -1463,6 +1593,7 @@ function downloadImage() {
 const LS_FACING = 'classroom_seats_facing';
 
 function onFacingToggle() {
+    pauseAutoClass('edit');
     const on = $('faceEachOther').checked;
     localStorage.setItem(LS_FACING, on ? '1' : '0');
     if (!currentPlan) return;
@@ -1520,7 +1651,16 @@ window.addEventListener('load', () => {
     addEventListener('resize', equalizeSeats);
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(equalizeSeats);
     renderRules();
-    changeClass();
+    scheduleStarted = true;
+    syncClassWithSchedule(true);
+    setInterval(() => {
+        if (!document.hidden) syncClassWithSchedule();
+    }, 15000);
+});
+window.addEventListener('focus', () => syncClassWithSchedule());
+window.addEventListener('pageshow', () => syncClassWithSchedule());
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) syncClassWithSchedule();
 });
 </script>
 </body>
