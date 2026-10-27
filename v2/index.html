@@ -1350,6 +1350,12 @@ function resumeAutoClass() {
     syncClassWithSchedule();
 }
 
+function automaticLayoutForClass(cls) {
+    if (cls.endsWith('-영어')) return 'zigzag';
+    if (cls.endsWith('-과학')) return 'science';
+    return null;
+}
+
 function syncClassWithSchedule(initial = false) {
     if (!scheduleStarted) return;
     const state = ClassSchedule.at();
@@ -1361,10 +1367,13 @@ function syncClassWithSchedule(initial = false) {
             const available = [...$('classSelect').options].some(option => option.value === last);
             target = available ? last : (state.lessons.at(-1)?.classId || target);
         }
-        // 같은 반의 연속 수업은 다시 불러오거나 자리를 섞지 않는다.
-        if (initial || target !== currentClass()) {
+        const preferredLayout = automaticLayoutForClass(target);
+        // 반과 교실 모양이 같으면 연속 수업에서도 배치를 그대로 유지한다.
+        // 수동으로 모양을 바꾼 뒤 자동 선택을 다시 켜면 수업에 맞는 모양으로 돌아간다.
+        if (initial || target !== currentClass()
+            || (preferredLayout && preferredLayout !== $('layoutSelect').value)) {
             $('classSelect').value = target;
-            changeClass();
+            changeClass({ preferredLayout });
         }
     }
     renderScheduleStatus(state);
@@ -1506,10 +1515,11 @@ function loadPlan() {
 /* ══════════════════════════════════════════════
    반 바꾸기
    ══════════════════════════════════════════════ */
-async function changeClass() {
+async function changeClass({ preferredLayout = null } = {}) {
     const cls = currentClass();
     const request = ++classLoadVersion;
     const isCurrent = () => request === classLoadVersion && cls === currentClass();
+    if (preferredLayout) $('layoutSelect').value = preferredLayout;
     loadedClass = null;
     currentPlan = null;
     savedPlanRaw = null;
@@ -1567,7 +1577,14 @@ async function changeClass() {
     renderRules();
     $('loadPlanBtn').disabled = !savedPlanRaw;
 
-    if (!applyPlan(savedPlanRaw)) shuffleAndRender(false);
+    // 자동 선택에서는 과목별 교실 모양을 우선한다. 같은 모양의 저장 배치는
+    // 그대로 복원하고, 다른 모양의 저장 배치는 보관한 채 현재 명단으로 새로 그린다.
+    if (preferredLayout && savedPlanRaw?.layout !== preferredLayout) {
+        shuffleAndRender(false);
+        if (savedPlanRaw && flatSeats(currentPlan).filter(seat => seat.name).length >= parseStudents().length) {
+            toast('수업에 맞는 교실 모양으로 열었어요. 기존 배치는 [저장된 배치]에서 다시 열 수 있어요.', 5000);
+        }
+    } else if (!applyPlan(savedPlanRaw)) shuffleAndRender(false);
     loadedClass = cls;
     localStorage.setItem(LS_LAST_CLASS, cls);
     setClassLoading(false);
